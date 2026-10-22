@@ -76,12 +76,12 @@ button{cursor:pointer}
 .tabbar .badge{position:absolute;top:4px;left:calc(50% + 6px);margin:0;min-width:16px;height:16px;font-size:10px}
 
 main{padding-block:20px calc(88px + env(safe-area-inset-bottom,0px))}
-@media (min-width:1100px){
+@media (min-width:1240px){
   .nav{display:flex}.tabbar{display:none}
   main{padding-block:28px 56px}
 }
-@media (max-width:640px){.app-name{display:none}}
-@media (min-width:1100px) and (max-width:1279px){.app-name small{display:none}}
+@media (max-width:640px){.app-name small{display:none}.app-name{font-size:12px;letter-spacing:.1em}.top .wrap{gap:12px}}
+@media (min-width:1240px) and (max-width:1359px){.app-name small{display:none}}
 
 /* Seitenkopf, Bänder */
 .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin-bottom:18px}
@@ -247,7 +247,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .toast.err{background:var(--bad);color:#fff}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .toast.err{color:#2a0d0a}}
 :root[data-theme="dark"] .toast.err{color:#2a0d0a}
-@media (min-width:1100px){.toast{bottom:28px}}
+@media (min-width:1240px){.toast{bottom:28px}}
 #toast:empty{display:none}
 .link-cards{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
 @media (min-width:700px){.link-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}

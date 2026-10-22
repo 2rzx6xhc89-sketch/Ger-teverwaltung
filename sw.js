@@ -1,7 +1,7 @@
 /* Service Worker: App offline nutzbar machen.
    Eigene Dateien: erst Netz (damit Updates ankommen), sonst Zwischenspeicher.
    Bibliotheken von CDN (QR, PDF) und Schriften: nach dem ersten Laden aus dem Zwischenspeicher. */
-const VERSION='v3';
+const VERSION='v4';
 const CACHE='geraete-'+VERSION;
 const SHELL=['./','index.html','app.js','local-db.js','seed.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
 self.addEventListener('install',e=>{
