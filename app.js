@@ -36,7 +36,7 @@ const DEFAULT_ARTEN=[
   {name:'Verbandskasten kontrollieren',monate:12},
   {name:'Motorsäge Wartung',monate:6}
 ];
-const DEFAULT_SETTINGS={firma:'Böger Galabau',vorlauf:30,empfaenger:[],baseUrl:'',fristenarten:DEFAULT_ARTEN};
+const DEFAULT_SETTINGS={firma:'Böger Galabau',vorlauf:30,empfaenger:[],baseUrl:'',fristenarten:DEFAULT_ARTEN,baustellen:[],lieferanten:[]};
 const ICONS={
   start:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
   inventar:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
@@ -47,6 +47,8 @@ const ICONS={
   lager:'<path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
   etiketten:'<rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2v2M20 18v2"/>',
   einstellungen:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+  teile:'<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v6M15 10v5M9 15v5"/>',
+  anf:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   back:'<path d="M15 5l-7 7 7 7"/>',
   prev:'<path d="M15 5l-7 7 7 7"/>',
@@ -67,10 +69,10 @@ const S={
   cal:{y:new Date().getFullYear(),m:new Date().getMonth()},calSel:null,calMode:'monat',frFilter:'alle',
   repFilter:'aktiv',
   lq:'',labelSel:new Set(),labelFmt:'a4-70x37',labelFrame:false,
-  scanMsg:null,
+  scanMsg:null,parts:[],moves:[],outbox:[],anf:[],tq:'',tKat:'',tLow:false,tLief:'',labelSrc:'geraete',anfTab:'liste',packDay:addDays(today(),1),
   _fr:null
 };
-let db=null,user=null,dlCap=null,pendingHash=null,firstLoad={g:false,l:false,m:false,s:false};
+let db=null,user=null,dlCap=null,pendingHash=null,firstLoad={g:false,l:false,m:false,s:false,t:false,b:false,a:false};
 
 /* ================= Abgeleitete Daten ================= */
 const devById=id=>S.devices.find(d=>d.id===id);
@@ -180,6 +182,8 @@ function reportParts(){
   body+='Fällig in den nächsten '+S.settings.vorlauf+' Tagen ('+soon.length+'):\n'+(soon.length?soon.map(line).join('\n'):'- keine')+'\n';
   const open=S.reports.filter(r=>r.status!=='erledigt');
   body+='\nOffene Schadensmeldungen ('+open.length+'):\n'+(open.length?open.map(r=>{const d=devById(r.geraetId);return '- '+(d?d.inv+' '+d.name:r.geraetId)+': '+r.titel+' ('+SEV[r.schwere]+', '+RST[r.status]+')';}).join('\n'):'- keine')+'\n';
+  const lowp=lowParts();
+  body+='\nArtikel unter Mindestbestand ('+lowp.length+'):\n'+(lowp.length?lowp.map(p=>'- '+p.name+(p.artikelnr?' (Art.-Nr. '+p.artikelnr+')':'')+': Bestand '+nbr(p.bestand)+', Minimum '+nbr(p.minbestand)+(p.lieferant?', '+p.lieferant:'')+(p.bestellt?' (bestellt)':'')).join('\n'):'- keine')+'\n';
   const subject='Fristen: '+over.length+' überfällig, '+soon.length+' bald fällig ('+fmt(today())+')';
   return{subject:subject,body:body};
 }
@@ -206,7 +210,7 @@ const FORMATS={
 };
 function labelPages(fmtKey,n){const f=FORMATS[fmtKey];return f.sheet?Math.max(1,Math.ceil(n/(f.cols*f.rows))):n;}
 function drawLabel(doc,dev,x,y,w,h,frame){
-  const m=qrMatrix(qrText(dev));if(!m)return;
+  const m=qrMatrix(dev._qr||qrText(dev));if(!m)return;
   const pd=Math.min(3,h*0.085),qs=Math.min(h-2*pd,w*0.46),n=m.length,mod=qs/n;
   if(frame){doc.setDrawColor(185,185,185);doc.setLineWidth(0.1);doc.rect(x,y,w,h);}
   doc.setFillColor(0,0,0);
@@ -225,7 +229,7 @@ function drawLabel(doc,dev,x,y,w,h,frame){
   doc.text(lines,tx,ty,{baseline:'top'});ty+=lines.length*nfs*0.3528*1.2+0.8;
   doc.setFontSize(6.5);doc.setTextColor(95,95,95);
   const pl=placeName(dev.standort);
-  const sub=doc.splitTextToSize((dev.kategorie||'')+(dev.standort?' · '+pl:''),tw);
+  const sub=doc.splitTextToSize(dev._sub!=null?dev._sub:(dev.kategorie||'')+(dev.standort?' · '+pl:''),tw);
   doc.text(sub.slice(0,1),tx,ty,{baseline:'top'});
   doc.setFontSize(6);doc.text(String(S.settings.firma||'').slice(0,40),tx,y+h-pd,{baseline:'bottom'});
 }
@@ -287,27 +291,30 @@ function invFromScan(text){
 }
 
 /* ================= Navigation ================= */
-const NAV=[['start','Übersicht'],['inventar','Inventar'],['kalender','Kalender'],['meldungen','Meldungen'],['lager','Lagerplätze'],['etiketten','QR-Etiketten'],['scan','Scannen'],['einstellungen','Einstellungen']];
-const activeNav=()=>S.view==='detail'?'inventar':S.view;
+const NAV=[['start','Übersicht'],['inventar','Inventar'],['teile','Material'],['anf','Anforderungen'],['kalender','Kalender'],['meldungen','Meldungen'],['scan','Scannen'],['mehr','Mehr']];
+const activeNav=()=>S.view==='detail'?'inventar':(S.view==='teil'||S.view==='platz'?'teile':S.view);
 const overCount=()=>FR().filter(x=>x.state==='over').length;
+const anfSoon=()=>S.anf.filter(r=>r.status!=='ausgeliefert'&&r.datum>=today()&&r.datum<=addDays(today(),1)).length;
 const openRepCount=()=>S.reports.filter(r=>r.status!=='erledigt').length;
 function navBadge(id){
   if(S.mode!=='ready')return '';
   if(id==='kalender'&&overCount())return '<span class="badge red">'+overCount()+'</span>';
+  if(id==='teile'&&toOrder().length)return '<span class="badge red">'+toOrder().length+'</span>';
+  if(id==='anf'&&anfSoon())return '<span class="badge">'+anfSoon()+'</span>';
   if(id==='meldungen'&&openRepCount())return '<span class="badge">'+openRepCount()+'</span>';
   return '';
 }
 function navHtml(){
   const a=activeNav();
-  return NAV.map(n=>'<button type="button" data-act="nav" data-v="'+n[0]+'"'+(a===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+navBadge(n[0])+'</button>').join('');
+  return NAV.map(n=>'<button type="button" data-act="nav" data-v="'+n[0]+'"'+((a===n[0]||(n[0]==='mehr'&&['lager','etiketten','einstellungen'].indexOf(a)>=0))?' aria-current="page"':'')+'>'+esc(n[1])+navBadge(n[0])+'</button>').join('');
 }
 function tabHtml(){
-  const a=activeNav(),moreActive=['lager','etiketten','einstellungen','mehr'].indexOf(a)>=0;
-  const items=[['start','Start','start'],['inventar','Inventar','inventar'],['scan','Scannen','scan'],['kalender','Fristen','kalender'],['meldungen','Schäden','meldungen'],['mehr','Mehr','mehr']];
+  const a=activeNav(),moreActive=['kalender','meldungen','lager','etiketten','einstellungen','mehr'].indexOf(a)>=0;
+  const items=[['start','Start','start'],['teile','Material','teile'],['scan','Scannen','scan'],['anf','Anfordern','anf'],['inventar','Inventar','inventar'],['mehr','Mehr','mehr']];
   return items.map(it=>{
     const id=it[0],cur=id==='mehr'?moreActive:a===id;
     const inner=id==='scan'?'<span class="disc">'+ic('scan')+'</span>':ic(it[2]);
-    return '<button type="button"'+(id==='scan'?' class="scan"':'')+' data-act="nav" data-v="'+id+'"'+(cur?' aria-current="page"':'')+'>'+inner+'<span>'+esc(it[1])+'</span>'+navBadge(id)+'</button>';
+    return '<button type="button"'+(id==='scan'?' class="scan"':'')+' data-act="nav" data-v="'+id+'"'+(cur?' aria-current="page"':'')+'>'+inner+'<span>'+esc(it[1])+'</span>'+(id==='mehr'?((overCount()+openRepCount())?'<span class="badge red">'+(overCount()+openRepCount())+'</span>':''):navBadge(id))+'</button>';
   }).join('');
 }
 
@@ -342,8 +349,8 @@ function vStart(){
   const active=S.devices.filter(d=>d.status!=='aus').length,defect=S.devices.filter(d=>d.status==='defekt').length;
   const hasEx=S.devices.some(d=>d.beispiel);
   let h='<div class="band"><h1>Übersicht</h1><span class="sp"></span>'
-    +(S.canWrite?'<button class="btn white" type="button" data-act="newReport">Schaden melden</button>':'')
-    +'<button class="btn white" type="button" data-act="nav" data-v="scan">Gerät scannen</button>'
+    +(S.canWrite?'<button class="btn white" type="button" data-act="newReport">Schaden melden</button><button class="btn white" type="button" data-act="newAnf">Material anfordern</button>':'')
+    +'<button class="btn white" type="button" data-act="nav" data-v="scan">Scannen</button>'
     +'<p class="sub">'+esc(S.settings.firma)+' · Stand '+fmt(today())+'</p></div>';
   if(hasEx)h+='<div class="note"><div>Die mit „Beispiel“ gekennzeichneten Einträge sind Musterdaten zum Ausprobieren. Unter <button class="btn link" type="button" data-act="nav" data-v="einstellungen">Einstellungen</button> lassen sie sich mit einem Klick entfernen.</div></div>';
   if(S.canWrite===false)h+='<div class="note warn"><div>Sie haben nur Leserechte. Zum Eintragen und Melden bitte um die Rolle „Mitwirkender“ bitten.</div></div>';
@@ -356,6 +363,8 @@ function vStart(){
     +'<button type="button" class="tile" data-act="nav" data-v="meldungen"><span class="n">'+open.length+'</span><span class="l">offene Schadensmeldungen</span></button>'
     +'<button type="button" class="tile" data-act="nav" data-v="inventar"><span class="n">'+active+'</span><span class="l">aktive Geräte'+(defect?', davon '+defect+' defekt':'')+'</span></button>'
     +'</div>';
+  if(toOrder().length)h+='<div class="note bad" style="margin-bottom:16px"><div><strong>'+toOrder().length+(toOrder().length===1?' Artikel liegt':' Artikel liegen')+' unter dem Mindestbestand.</strong> <button class="btn link" type="button" data-act="orderList">Bestell-Liste</button> · <button class="btn link" type="button" data-act="nav" data-v="teile">Material</button></div></div>';
+  if(anfSoon())h+='<div class="note" style="margin-bottom:16px"><div><strong>'+anfSoon()+(anfSoon()===1?' Anforderung':' Anforderungen')+' für heute oder morgen.</strong> <button class="btn link" type="button" data-act="packGo">Zur Packliste</button></div></div>';
   h+='<div class="grid2"><section class="card"><div class="hd"><h2>Nächste Fristen</h2><span class="sp"></span><button class="btn sm" type="button" data-act="frNav" data-f="alle">Alle ansehen</button></div>'
     +(fr.length?fr.slice(0,8).map(x=>fristRow(x,true)).join(''):emptyState('Keine Fristen hinterlegt','Fristen werden am Gerät angelegt, zum Beispiel HU, UVV oder Wartung.'))
     +'</section>'
@@ -440,6 +449,7 @@ function vDetail(){
     +'</div></section>';
   h+='<section class="card"><div class="hd"><h2>Schadensmeldungen</h2><span class="sp"></span>'+(w?'<button class="btn sm" type="button" data-act="newReport" data-id="'+esc(d.id)+'">'+ic('plus','sm')+' Melden</button>':'')+'</div>'
     +(reps.length?reps.map(repRow).join(''):'<div class="empty" style="padding:22px">Keine Meldungen zu diesem Gerät.</div>')+'</section>';
+  h+=devPartsSection(d);
   h+='</div><div class="stack">';
   h+='<section class="card"><div class="hd"><h2>QR-Etikett</h2></div><div class="bd qrbox">'+qrSvg(qrText(d),150)
     +'<div class="stack" style="gap:10px"><div><div class="inv-big" style="font-size:20px">'+esc(d.inv)+'</div><div class="s muted">Scan öffnet dieses Gerät.</div></div>'
@@ -509,7 +519,8 @@ function vLager(){
   const places=S.places.slice().sort((a,b)=>cmp(a.name,b.name));
   let rows='';
   for(const p of places){
-    rows+='<div class="row two"><div><div class="t">'+esc(p.name)+exTag(p)+'</div><div class="s">'+esc(p.beschreibung||'')+(p.beschreibung?' · ':'')+cnt(p.id)+(cnt(p.id)===1?' Gerät':' Geräte')+'</div></div><div class="acts">'
+    rows+='<div class="row two"><div><div class="t">'+esc(p.name)+exTag(p)+'</div><div class="s">'+esc(p.beschreibung||'')+(p.beschreibung?' · ':'')+cnt(p.id)+(cnt(p.id)===1?' Gerät':' Geräte')+' · '+S.parts.filter(x=>x.standort===p.id).length+' Artikel</div></div><div class="acts">'
+      +'<button type="button" class="btn sm primary" data-act="openPlace" data-id="'+esc(p.id)+'">Material entnehmen</button>'
       +'<button type="button" class="btn sm" data-act="showPlace" data-id="'+esc(p.id)+'">Geräte anzeigen</button>'
       +(S.canWrite?'<button type="button" class="btn sm" data-act="editPlace" data-id="'+esc(p.id)+'">Bearbeiten</button>':'')+'</div></div>';
   }
@@ -521,19 +532,19 @@ function vLager(){
 
 function labelList(){
   const q=S.lq.trim().toLowerCase();
-  return S.devices.filter(d=>!q||[d.inv,d.name,d.typ,d.kennzeichen,placeName(d.standort)].join(' ').toLowerCase().indexOf(q)>=0).sort((a,b)=>cmp(a.inv,b.inv));
+  return labelItems().filter(d=>!q||[d.inv,d.name,d.typ,d.kennzeichen,placeName(d.standort)].join(' ').toLowerCase().indexOf(q)>=0).sort((a,b)=>cmp(a.inv,b.inv));
 }
 function pickHtml(){
   const list=labelList();
-  return list.length?list.map(d=>'<label><input type="checkbox" data-lsel="'+esc(d.id)+'"'+(S.labelSel.has(d.id)?' checked':'')+'><span><strong>'+esc(d.inv)+'</strong> · '+esc(d.name)+'<br><span class="muted" style="font-size:13px">'+esc(placeName(d.standort))+'</span></span></label>').join(''):'<div class="empty" style="padding:20px">Keine Geräte.</div>';
+  return list.length?list.map(d=>'<label><input type="checkbox" data-lsel="'+esc(d.id)+'"'+(S.labelSel.has(d.id)?' checked':'')+'><span><strong>'+esc(d.inv)+'</strong> · '+esc(d.name)+'<br><span class="muted" style="font-size:13px">'+esc(d._sub!=null?d._sub:placeName(d.standort))+'</span></span></label>').join(''):'<div class="empty" style="padding:20px">Keine Geräte.</div>';
 }
 function vEtiketten(){
-  const sel=S.devices.filter(d=>S.labelSel.has(d.id)).sort((a,b)=>cmp(a.inv,b.inv));
+  const sel=labelItems().filter(d=>S.labelSel.has(d.id)).sort((a,b)=>cmp(a.inv,b.inv));
   const f=FORMATS[S.labelFmt];
   let h='<div class="page-head"><h1>QR-Etiketten</h1><p class="sub">Auswählen, Format wählen, als PDF speichern und auf Etikettenbogen oder Etikettendrucker ausgeben.</p></div>';
   if(!baseUrlEff())h+='<div class="note warn"><div>Es ist noch keine Seitenadresse hinterlegt. Die QR-Codes enthalten dann nur die Nummer und öffnen mit der Handy-Kamera kein Gerät. Die Adresse steht unter <button class="btn link" type="button" data-act="nav" data-v="einstellungen">Einstellungen</button>.</div></div>';
-  h+='<div class="grid2 even"><section class="card"><div class="hd"><h2>1 · Geräte auswählen</h2><span class="sp"></span><button type="button" class="btn sm" data-act="labelAll">Alle angezeigten</button><button type="button" class="btn sm" data-act="labelNone">Keine</button></div>'
-    +'<div class="bd stack" style="gap:12px"><div class="field"><label class="sr" for="lq">Geräte suchen</label><input id="lq" type="search" placeholder="Suchen …" value="'+esc(S.lq)+'" data-bind="lq" autocomplete="off"></div>'
+  h+='<div class="grid2 even"><section class="card"><div class="hd"><h2>1 · Auswählen</h2><span class="sp"></span><button type="button" class="btn sm" data-act="labelAll">Alle angezeigten</button><button type="button" class="btn sm" data-act="labelNone">Keine</button></div>'
+    +'<div class="bd stack" style="gap:12px"><div class="field"><label for="labelSrc">Etiketten für</label><select id="labelSrc" data-bind="labelSrc">'+options([['geraete','Geräte, Maschinen, Fahrzeuge'],['teile','Material und Ersatzteile'],['plaetze','Lagerplätze (Entnahme per Scan)']],S.labelSrc)+'</select></div><div class="field"><label class="sr" for="lq">Geräte suchen</label><input id="lq" type="search" placeholder="Suchen …" value="'+esc(S.lq)+'" data-bind="lq" autocomplete="off"></div>'
     +'<div class="pick" id="pickList">'+pickHtml()+'</div></div></section>';
   h+='<section class="card"><div class="hd"><h2>2 · Format und PDF</h2></div><div class="bd stack">'
     +'<div class="field"><label for="labelFmt">Etikettenformat</label><select id="labelFmt" data-bind="labelFmt">'+options(Object.keys(FORMATS).map(k=>[k,FORMATS[k].name]),S.labelFmt)+'</select></div>'
@@ -543,7 +554,7 @@ function vEtiketten(){
     +'<p class="muted" style="font-size:13px">Die Seite kann nicht selbst drucken. Das gespeicherte PDF in Originalgröße öffnen und drucken, ohne „An Seite anpassen“.</p></div></section></div>';
   if(sel.length){
     h+='<section class="card" style="margin-top:16px"><div class="hd"><h2>Vorschau</h2></div><div class="bd lab-grid">'
-      +sel.slice(0,8).map(d=>'<div class="lab">'+qrSvg(qrText(d),100)+'<div class="lt"><b>'+esc(d.inv)+'</b>'+esc(d.name)+'<div class="g">'+esc(d.kategorie||'')+(d.standort?' · '+esc(placeName(d.standort)):'')+'</div></div></div>').join('')
+      +sel.slice(0,8).map(d=>'<div class="lab">'+qrSvg(d._qr||qrText(d),100)+'<div class="lt"><b>'+esc(d.inv)+'</b>'+esc(d.name)+'<div class="g">'+esc(d._sub!=null?d._sub:(d.kategorie||'')+(d.standort?' · '+placeName(d.standort):''))+'</div></div></div>').join('')
       +'</div>'+(sel.length>8?'<div class="bd muted" style="padding-top:0">… und '+(sel.length-8)+' weitere im PDF</div>':'')+'</section>';
   }
   return h;
@@ -562,7 +573,7 @@ function vScan(){
 }
 
 function vEinstellungen(){
-  const s=S.settings,rp=reportParts(),hasEx=S.devices.some(d=>d.beispiel||false)||S.places.some(p=>p.beispiel)||S.reports.some(r=>r.beispiel);
+  const s=S.settings,rp=reportParts(),hasEx=S.devices.some(d=>d.beispiel||false)||S.parts.some(p=>p.beispiel)||S.anf.some(r=>r.beispiel)||S.places.some(p=>p.beispiel)||S.reports.some(r=>r.beispiel);
   const arten=(s.fristenarten||[]).map(a=>a.name+' | '+a.monate).join('\n');
   let h='<div class="page-head"><h1>Einstellungen</h1></div><div class="stack">';
   h+='<section class="card"><div class="hd"><h2>Betrieb und Erinnerungen</h2></div><div class="bd"><form id="setForm" class="form-grid two">'
@@ -570,6 +581,9 @@ function vEinstellungen(){
     +'<div class="field"><label for="s_vorlauf">Vorwarnzeit in Tagen</label><input id="s_vorlauf" type="number" min="1" max="365" value="'+esc(s.vorlauf)+'"><span class="hint">Fristen innerhalb dieser Zeit gelten als „bald fällig“.</span></div>'
     +'<div class="field full"><label for="s_base">Adresse dieser Seite (für QR-Codes)</label><input id="s_base" type="url" value="'+esc(s.baseUrl)+'" placeholder="'+esc(baseUrlEff()||'https://…')+'"><span class="hint">Leer lassen = Adresse, unter der die App gerade geöffnet ist. Der QR-Code enthält diese Adresse plus die Gerätenummer. Bei geänderter Adresse müssen Etiketten neu gedruckt werden.</span></div>'
     +'<div class="field full"><label for="s_name">Ihr Name auf diesem Gerät (für Verlauf und Schadensmeldungen)</label><input id="s_name" type="text" value="'+esc(myName())+'" placeholder="z. B. Max Mustermann" autocomplete="name"></div>'
+    +'<div class="field full"><label for="s_bau">Baustellen (eine pro Zeile, Auswahl bei Anforderungen)</label><textarea id="s_bau" style="min-height:70px" placeholder="Garten Schmidt, Bad Pyrmont">'+esc((s.baustellen||[]).join('\n'))+'</textarea></div>'
+    +'<div class="field full"><label for="s_lief">Lieferanten mit E-Mail (Name | E-Mail, eine pro Zeile)</label><textarea id="s_lief" style="min-height:70px" placeholder="Ahrens Lügde | bestellung@beispiel.de">'+esc((s.lieferanten||[]).map(l=>l.name+' | '+(l.email||'')).join('\n'))+'</textarea><span class="hint">Für den fertigen Bestell-Mail-Entwurf an den Lieferanten.</span></div>'
+    +'<div class="field full"><label for="s_name">Ihr Name auf diesem Gerät (für Verlauf, Buchungen und Anforderungen)</label><input id="s_name" type="text" value="'+esc(myName())+'" placeholder="z. B. Max Mustermann" autocomplete="name"></div>'
     +'<div class="field full"><label for="s_empf">E-Mail-Empfänger für den Fristenbericht (eine Adresse pro Zeile)</label><textarea id="s_empf" style="min-height:70px" placeholder="werkstatt@beispiel.de">'+esc((s.empfaenger||[]).join('\n'))+'</textarea></div>'
     +'<div class="field full"><label for="s_arten">Fristenarten mit Standardintervall (Name | Monate)</label><textarea id="s_arten" style="min-height:150px">'+esc(arten)+'</textarea><span class="hint">Die Intervalle sind Vorschläge. Maßgeblich sind Herstellerangaben, UVV und DGUV-Vorgaben für das jeweilige Gerät.</span></div>'
     +'<div class="full"><button class="btn primary" type="submit"'+(S.canWrite?'':' disabled')+'>Einstellungen speichern</button></div></form></div></section>';
@@ -583,6 +597,11 @@ function vEinstellungen(){
   h+='<section class="card"><div class="hd"><h2>Daten</h2></div><div class="bd stack"><div class="chips"><button type="button" class="btn" data-act="exportInv">Inventar als CSV</button><button type="button" class="btn" data-act="exportFr">Fristen als CSV</button></div>'
     +(hasEx&&S.canWrite?'<div><button type="button" class="btn danger" data-act="delExamples">Beispieldaten löschen</button><p class="muted" style="font-size:13px;margin-top:6px">Entfernt nur die mit „Beispiel“ gekennzeichneten Geräte, Lagerplätze und Meldungen.</p></div>':'')
     +'</div></section>';
+  const ob=S.outbox.slice().sort((a,b)=>(b.zeit||0)-(a.zeit||0));
+  h+='<section class="card"><div class="hd"><h2>Meldungen an das Büro (Vorbereitung)</h2></div><div class="bd stack">'
+    +'<p class="muted" style="margin:0">Unterschreitet ein Artikel den Mindestbestand, wird hier ein Hinweis vorgemerkt. <strong>E-Mail und Push werden erst mit dem späteren Server verschickt.</strong> Bis dahin zeigen rote Markierungen, die Bestell-Liste und die Mail-Entwürfe den Stand.</p>'
+    +(ob.length?'<ul class="hist">'+ob.slice(0,8).map(o=>'<li><span class="num muted">'+fmt(o.datum)+'</span><span>'+esc(o.name)+': Bestand '+nbr(o.bestand)+', Minimum '+nbr(o.minbestand)+' · gebucht von '+esc(nameOf(o.von))+' · '+(o.gesendet?'versendet':'noch nicht versendet')+'</span></li>').join('')+'</ul>':'<p class="muted" style="margin:0">Noch keine Hinweise.</p>')
+    +'</div></section>';
   h+='<section class="card"><div class="hd"><h2>Sicherung und Abgleich</h2></div><div class="bd stack">'
     +'<p class="muted" style="margin:0">Alle Daten liegen nur im Browser dieses Geräts. Um dieselben Daten auf einem anderen Gerät zu nutzen oder zu sichern, exportieren Sie hier eine Sicherungsdatei und importieren Sie sie dort.</p>'
     +'<div class="chips"><button type="button" class="btn primary" data-act="exportJson">Sicherung speichern (JSON)</button><button type="button" class="btn" data-act="importJson">Sicherung einlesen …</button>'
@@ -594,11 +613,11 @@ function vEinstellungen(){
 }
 
 function vMehr(){
-  const it=[['lager','lager','Lagerplätze','Plätze verwalten, Geräte zuordnen'],['etiketten','etiketten','QR-Etiketten','Etiketten als PDF erzeugen'],['einstellungen','einstellungen','Einstellungen','Vorwarnzeit, Fristenarten, Bericht']];
+  const it=[['kalender','kalender','Fristen und Kalender','Wartung, Prüfungen, Termine'],['meldungen','meldungen','Schadensmeldungen','Gemeldete Schäden ansehen'],['lager','lager','Lagerplätze','Plätze verwalten, Geräte zuordnen'],['etiketten','etiketten','QR-Etiketten','Etiketten als PDF erzeugen'],['einstellungen','einstellungen','Einstellungen','Vorwarnzeit, Fristenarten, Bericht']];
   return '<div class="page-head"><h1>Mehr</h1></div><div class="link-cards">'+it.map(x=>'<button type="button" data-act="nav" data-v="'+x[0]+'">'+ic(x[1])+'<span><b>'+x[2]+'</b><span class="s">'+x[3]+'</span></span></button>').join('')+'</div>';
 }
 
-const VIEWS={start:vStart,inventar:vInventar,detail:vDetail,kalender:vKalender,meldungen:vMeldungen,lager:vLager,etiketten:vEtiketten,scan:vScan,einstellungen:vEinstellungen,mehr:vMehr};
+const VIEWS={start:vStart,inventar:vInventar,detail:vDetail,kalender:vKalender,meldungen:vMeldungen,lager:vLager,etiketten:vEtiketten,teile:vTeile,teil:vTeil,platz:vPlatz,anf:vAnf,scan:vScan,einstellungen:vEinstellungen,mehr:vMehr};
 
 function render(){
   S._fr=null;
@@ -902,11 +921,11 @@ const ACT={
     if(ok)closeModal();
   },
   showPlace:ds=>{S.q='';S.fKat='';S.fStatus='';S.fPlace=ds.id;go('inventar');},
-  labelFor:ds=>{S.labelSel=new Set([ds.id]);S.lq='';go('etiketten');},
-  labelAll:()=>{const q=S.lq.trim().toLowerCase();S.devices.filter(d=>!q||[d.inv,d.name,d.typ,d.kennzeichen,placeName(d.standort)].join(' ').toLowerCase().indexOf(q)>=0).forEach(d=>S.labelSel.add(d.id));render();},
+  labelFor:ds=>{S.labelSrc='geraete';S.labelSel=new Set([ds.id]);S.lq='';go('etiketten');},
+  labelAll:()=>{const q=S.lq.trim().toLowerCase();labelItems().filter(d=>!q||[d.inv,d.name,d.typ,d.kennzeichen,placeName(d.standort)].join(' ').toLowerCase().indexOf(q)>=0).forEach(d=>S.labelSel.add(d.id));render();},
   labelNone:()=>{S.labelSel=new Set();render();},
   makePdf:async()=>{
-    const sel=S.devices.filter(d=>S.labelSel.has(d.id)).sort((a,b)=>cmp(a.inv,b.inv));
+    const sel=labelItems().filter(d=>S.labelSel.has(d.id)).sort((a,b)=>cmp(a.inv,b.inv));
     if(!sel.length)return;
     let blob;
     try{blob=buildPdf(sel,S.labelFmt,S.labelFrame);}catch(e){console.error(e);toast(e.message||'PDF konnte nicht erstellt werden.','err');return;}
@@ -933,12 +952,18 @@ const ACT={
   },
   importJson:()=>{const f=$('#importFile');if(f)f.click();},
   loadExamples:async()=>{
-    await run(()=>LocalDB.setMany(window.SEED_DOCS||{}),'Beispieldaten geladen. Sie sind mit „Beispiel“ gekennzeichnet.');
+    await run(async()=>{
+      const docs=window.SEED_DOCS||{},add={};
+      for(const k of Object.keys(docs)){const s=await db.doc(k).get();if(!s.exists)add[k]=docs[k];}
+      await LocalDB.setMany(add);
+    },'Beispieldaten geladen. Sie sind mit „Beispiel“ gekennzeichnet.');
   },
   delExamples:async(ds,t)=>{
     if(!needWrite()||!arm(t,'Wirklich alle Beispiele löschen?'))return;
     await run(async()=>{
       for(const r of S.reports.filter(x=>x.beispiel)){await db.doc('meldungen/'+r.id).delete();if(r.foto)await db.doc('fotos/'+r.id).delete();}
+      for(const r of S.anf.filter(x=>x.beispiel))await db.doc('anforderungen/'+r.id).delete();
+      for(const p of S.parts.filter(x=>x.beispiel)){for(const m of S.moves.filter(x=>x.teilId===p.id))await db.doc('buchungen/'+m.id).delete();await db.doc('teile/'+p.id).delete();}
       for(const d of S.devices.filter(x=>x.beispiel))await db.doc('geraete/'+d.id).delete();
       for(const p of S.places.filter(x=>x.beispiel))await db.doc('lager/'+p.id).delete();
     },'Beispieldaten gelöscht.');
@@ -959,6 +984,516 @@ const CHG={
   }
 };
 
+/* ================= Material: Artikel, Kategorien, Bestellstatus ================= */
+const KATS=['Ersatzteil','Verbrauchsmaterial','Kleinwerkzeug'];
+const partById=id=>S.parts.find(p=>p.id===id);
+const nbr=v=>{const n=Number(String(v).replace(',','.'));return isFinite(n)?n:0;};
+const round2=x=>Math.round(nbr(x)*100)/100;
+const katOf=p=>p.kategorie||'Ersatzteil';
+const isLow=p=>nbr(p.minbestand)>0&&nbr(p.bestand)<nbr(p.minbestand);
+const needOrder=p=>isLow(p)&&!p.bestellt;
+const lowParts=()=>S.parts.filter(isLow);
+const toOrder=()=>S.parts.filter(needOrder);
+const unitOf=p=>p.einheit||'Stk';
+const partQr=p=>{const b=baseUrlEff();return b?b+'#'+p.id:p.id;};
+const placeQr=pl=>(baseUrlEff()||'')+'#platz-'+pl.id;
+const partPlace=p=>(p.standort?placeName(p.standort):'Ohne Lagerplatz')+(p.regal?' · '+p.regal:'');
+const partDevs=p=>(p.geraete||[]).map(devById).filter(Boolean);
+const suppliers=()=>Array.from(new Set(S.parts.map(p=>p.lieferant).filter(Boolean))).sort(cmp);
+const supMail=name=>{const x=(S.settings.lieferanten||[]).find(l=>l.name===name);return x?x.email:'';};
+const orderQty=p=>nbr(p.bestellmenge)>0?nbr(p.bestellmenge):Math.max(0,round2(nbr(p.minbestand)-nbr(p.bestand)));
+const ART={entnahme:'Entnahme',zugang:'Zugang',inventur:'Inventur'};
+function stockPill(p){
+  if(isLow(p))return p.bestellt?pill('fr-soon','Bestellt'):pill('fr-over','Unter Minimum');
+  if(nbr(p.minbestand)>0&&nbr(p.bestand)===nbr(p.minbestand))return pill('fr-soon','Am Minimum');
+  if(nbr(p.bestand)<=0)return pill('st-aus','Leer');
+  return pill('fr-ok','Auf Lager');
+}
+const stockText=p=>nbr(p.bestand)+' '+unitOf(p)+(nbr(p.minbestand)>0?' (min. '+nbr(p.minbestand)+')':'');
+function nextPartNumber(){let max=0;for(const p of S.parts){const m=String(p.id).match(/^T-(\d+)$/);if(m)max=Math.max(max,Number(m[1]));}return max+1;}
+function partLabel(p){return{id:p.id,inv:p.id,name:p.name,kategorie:katOf(p),standort:p.standort,_qr:partQr(p),_sub:katOf(p)+(p.artikelnr?' · Art.-Nr. '+p.artikelnr:'')+(p.regal?' · '+p.regal:'')};}
+function placeLabel(pl){return{id:pl.id,inv:pl.name,name:'Lagerplatz: hier Material entnehmen',kategorie:'Lagerplatz',standort:'',_qr:placeQr(pl),_sub:pl.beschreibung||'Scan öffnet die Artikelliste'};}
+function labelItems(){return S.labelSrc==='teile'?S.parts.map(partLabel):(S.labelSrc==='plaetze'?S.places.map(placeLabel):S.devices);}
+
+function resolveTarget(text){
+  let t=String(text||'').trim();const h=t.lastIndexOf('#');if(h>=0)t=t.slice(h+1);t=t.trim();
+  const mp=t.match(/^platz-(.+)$/i);
+  if(mp){const pl=S.places.find(x=>x.id===mp[1]);return pl?{view:'platz',id:pl.id}:null;}
+  const inv=invFromScan(t);if(!inv)return null;
+  if(devById(inv))return{view:'detail',id:inv};
+  if(partById(inv))return{view:'teil',id:inv};
+  return null;
+}
+
+function partsFiltered(){
+  const q=S.tq.trim().toLowerCase();
+  return S.parts.filter(p=>{
+    if(S.tLow&&!isLow(p))return false;
+    if(S.tKat&&katOf(p)!==S.tKat)return false;
+    if(S.tLief&&p.lieferant!==S.tLief)return false;
+    if(!q)return true;
+    return [p.id,p.name,p.artikelnr,p.hersteller,p.lieferant,p.regal,katOf(p),placeName(p.standort),partDevs(p).map(d=>d.inv+' '+d.name).join(' ')].join(' ').toLowerCase().indexOf(q)>=0;
+  }).sort((a,b)=>(isLow(b)-isLow(a))||cmp(a.name,b.name));
+}
+function partListHtml(){
+  const list=partsFiltered();
+  if(!S.parts.length)return '<div class="card">'+emptyState('Noch kein Material erfasst','Legen Sie Ersatzteile, Verbrauchsmaterial und Kleinwerkzeug an, mit Lagerplatz, Lieferant und Mindestbestand.',S.canWrite?'<button class="btn primary" type="button" data-act="newPart">'+ic('plus','sm')+' Ersten Artikel anlegen</button> <button class="btn" type="button" data-act="loadExamples">Beispieldaten laden</button>':'')+'</div>';
+  if(!list.length)return '<div class="card">'+emptyState('Nichts gefunden','Zu dieser Suche gibt es keinen Artikel.','<button class="btn" type="button" data-act="resetPartFilter">Filter zurücksetzen</button>')+'</div>';
+  let h='<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nr.</th><th>Bezeichnung</th><th>Lieferant</th><th>Lagerplatz</th><th>Bestand</th><th>Status</th></tr></thead><tbody>';
+  for(const p of list){
+    const dv=partDevs(p).map(d=>d.name).join(', ');
+    h+='<tr tabindex="0" data-act="openPart" data-id="'+esc(p.id)+'"><td class="inv">'+esc(p.id)+'</td>'
+      +'<td><div class="t" style="font-weight:600;color:var(--fg-strong)">'+esc(p.name)+exTag(p)+'</div><div class="s muted" style="font-size:13px">'+esc([katOf(p),p.artikelnr,dv?'für '+dv:''].filter(Boolean).join(' · '))+'</div></td>'
+      +'<td>'+esc(p.lieferant||'–')+'</td><td>'+esc(partPlace(p))+'</td>'
+      +'<td style="white-space:nowrap">'+esc(stockText(p))+'</td><td>'+stockPill(p)+'</td></tr>';
+  }
+  h+='</tbody></table></div><div class="cards">';
+  for(const p of list){
+    h+='<button type="button" class="dcard" data-act="openPart" data-id="'+esc(p.id)+'"><div class="top2"><span class="inv">'+esc(p.id)+'</span>'+stockPill(p)+'</div>'
+      +'<div class="t" style="font-weight:600;color:var(--fg-strong)">'+esc(p.name)+exTag(p)+'</div>'
+      +'<div class="meta"><span>'+esc(stockText(p))+'</span><span>'+esc(partPlace(p))+'</span></div>'
+      +'<div class="s muted" style="font-size:13px">'+esc([katOf(p),p.lieferant].filter(Boolean).join(' · '))+'</div></button>';
+  }
+  h+='</div></div><p class="muted" style="margin-top:10px;font-size:13px">'+list.length+' von '+S.parts.length+' Artikeln</p>';
+  return h;
+}
+function vTeile(){
+  const low=toOrder(),ordered=lowParts().length-low.length;
+  let h='<div class="page-head"><h1>Material</h1><span class="sp"></span>'
+    +'<button class="btn" type="button" data-act="orderList">Bestell-Liste</button><button class="btn" type="button" data-act="exportTeile">CSV</button>'
+    +(S.canWrite?'<button class="btn primary" type="button" data-act="newPart">'+ic('plus','sm')+' Neuer Artikel</button>':'')+'</div>';
+  if(low.length)h+='<div class="note bad"><div><strong>'+low.length+(low.length===1?' Artikel liegt':' Artikel liegen')+' unter dem Mindestbestand und '+(low.length===1?'ist':'sind')+' noch nicht bestellt.</strong> <button class="btn link" type="button" data-act="orderList">Bestell-Liste öffnen</button></div></div>';
+  else if(ordered)h+='<div class="note"><div>'+ordered+(ordered===1?' Artikel ist':' Artikel sind')+' unter Minimum, aber bereits bestellt.</div></div>';
+  h+='<div class="toolbar" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) auto">'
+    +'<div class="field"><label class="sr" for="tq">Suchen</label><input id="tq" type="search" placeholder="Suchen: Bezeichnung, Artikelnummer, Lieferant, Regal …" value="'+esc(S.tq)+'" data-bind="tq" autocomplete="off"></div>'
+    +'<div class="field"><label class="sr" for="tKat">Kategorie</label><select id="tKat" data-bind="tKat">'+options(KATS.map(x=>[x,x]),S.tKat,'Alle Kategorien')+'</select></div>'
+    +'<div class="field"><label class="sr" for="tLief">Lieferant</label><select id="tLief" data-bind="tLief">'+options(suppliers().map(x=>[x,x]),S.tLief,'Alle Lieferanten')+'</select></div>'
+    +'<label class="check" style="align-self:center"><input type="checkbox" data-bindc="tLow"'+(S.tLow?' checked':'')+'> nur unter Minimum</label></div>';
+  h+='<div id="partList">'+partListHtml()+'</div>';
+  return h;
+}
+function vTeil(){
+  const p=partById(S.detail);
+  if(!p)return '<div class="card">'+emptyState('Artikel nicht gefunden','Der Artikel wurde gelöscht oder die Nummer stimmt nicht.','<button class="btn" type="button" data-act="nav" data-v="teile">Zur Materialliste</button>')+'</div>';
+  const w=S.canWrite,devs=partDevs(p);
+  const moves=S.moves.filter(m=>m.teilId===p.id).sort((a,b)=>(b.zeit||0)-(a.zeit||0)).slice(0,30);
+  let h='<button type="button" class="btn link back" data-act="nav" data-v="teile">'+ic('back','sm')+' Zurück zum Material</button>';
+  h+='<div class="page-head"><div><div class="inv-big">'+esc(p.id)+'</div><h1 style="margin-top:4px">'+esc(p.name)+exTag(p)+'</h1><div class="muted">'+esc(katOf(p))+'</div></div><span class="sp"></span>'+stockPill(p)
+    +(w?'<button class="btn" type="button" data-act="editPart" data-id="'+esc(p.id)+'">'+ic('edit','sm')+' Bearbeiten</button>':'')+'</div>';
+  if(isLow(p)&&p.bestellt)h+='<div class="note"><div><strong>Bestellt am '+fmt(p.bestellt.datum)+'</strong> ('+nbr(p.bestellt.menge)+' '+esc(unitOf(p))+'). Sobald die Ware da ist, „Zugang buchen“ wählen, dann ist der Status wieder grün.</div></div>';
+  else if(isLow(p))h+='<div class="note bad"><div><strong>Mindestbestand unterschritten.</strong> Vorschlag: '+orderQty(p)+' '+esc(unitOf(p))+(p.lieferant?' bei '+esc(p.lieferant):'')+' nachbestellen. <a class="btn link" target="_blank" rel="noopener" href="'+esc(orderMailHref([p],false))+'">Per Mail ans Büro</a>'+(w?' · <button class="btn link" type="button" data-act="markOrdered" data-id="'+esc(p.id)+'">Als bestellt markieren</button>':'')+' · <button class="btn link" type="button" data-act="orderList">Bestell-Liste</button></div></div>';
+  h+='<div class="grid2"><div class="stack">';
+  h+='<section class="card"><div class="hd"><h2>Bestand</h2></div><div class="bd stack"><div><span class="inv-big" style="font-size:34px">'+nbr(p.bestand)+'</span> <span class="muted">'+esc(unitOf(p))+(nbr(p.minbestand)>0?' · Mindestbestand '+nbr(p.minbestand):' · kein Mindestbestand')+'</span></div>'
+    +(w?'<div class="chips"><button class="btn primary" type="button" data-act="takePart" data-id="'+esc(p.id)+'">Entnehmen</button><button class="btn" type="button" data-act="addPart" data-id="'+esc(p.id)+'">Zugang buchen</button><button class="btn" type="button" data-act="countPart" data-id="'+esc(p.id)+'">Inventur</button></div>':'')+'</div></section>';
+  h+='<section class="card"><div class="hd"><h2>Stammdaten</h2></div><div class="bd"><dl class="dl">'
+    +'<dt>Kategorie</dt><dd>'+esc(katOf(p))+'</dd><dt>Artikelnummer</dt><dd>'+esc(p.artikelnr||'–')+'</dd><dt>Hersteller</dt><dd>'+esc(p.hersteller||'–')+'</dd><dt>Lieferant</dt><dd>'+esc(p.lieferant||'–')+'</dd>'
+    +'<dt>Bestellmenge</dt><dd>'+(nbr(p.bestellmenge)>0?nbr(p.bestellmenge)+' '+esc(unitOf(p)):'bis zum Minimum auffüllen')+'</dd>'
+    +'<dt>Lagerplatz</dt><dd>'+esc(partPlace(p))+(p.standort?' <button type="button" class="btn link" data-act="openPlace" data-id="'+esc(p.standort)+'">Platz öffnen</button>':'')+'</dd>'
+    +'<dt>Passend für</dt><dd>'+(devs.length?devs.map(d=>'<button type="button" class="btn link" data-act="open" data-id="'+esc(d.id)+'">'+esc(d.inv+' '+d.name)+'</button>').join('<br>'):'–')+'</dd>'
+    +'<dt>Notiz</dt><dd>'+esc(p.notiz||'–')+'</dd></dl></div></section></div><div class="stack">';
+  h+='<section class="card"><div class="hd"><h2>QR-Etikett</h2></div><div class="bd qrbox">'+qrSvg(partQr(p),150)
+    +'<div class="stack" style="gap:10px"><div><div class="inv-big" style="font-size:20px">'+esc(p.id)+'</div><div class="s muted">Scan öffnet diesen Artikel. Dort gleich „Entnehmen“ wählen.</div></div>'
+    +'<button class="btn" type="button" data-act="labelForPart" data-id="'+esc(p.id)+'">Etikett drucken</button></div></div></section>';
+  h+='<section class="card"><div class="hd"><h2>Buchungen</h2></div>'+(moves.length?'<ul class="hist">'+moves.map(m=>{
+    const d=m.geraetId?devById(m.geraetId):null;
+    return '<li><span class="num muted">'+fmt(m.datum)+'</span><span><strong>'+(m.art==='inventur'?'Inventur: '+nbr(m.neu):(nbr(m.menge)>0?'+':'')+nbr(m.menge))+' '+esc(unitOf(p))+'</strong> · '+esc(ART[m.art]||m.art)+' · '+esc(nameOf(m.user))+(d?' · '+esc(d.inv):'')+(m.notiz?'<br><span class="muted">'+esc(m.notiz)+'</span>':'')+'</span></li>';
+  }).join('')+'</ul>':'<div class="empty" style="padding:22px">Noch keine Buchung.</div>')+'</section>';
+  h+='</div></div>';
+  return h;
+}
+function devPartsSection(d){
+  const list=S.parts.filter(p=>(p.geraete||[]).indexOf(d.id)>=0).sort((a,b)=>cmp(a.name,b.name));
+  let h='<section class="card"><div class="hd"><h2>Ersatzteile</h2><span class="sp"></span>'+(S.canWrite?'<button class="btn sm" type="button" data-act="newPart" data-dev="'+esc(d.id)+'">'+ic('plus','sm')+' Artikel</button>':'')+'</div>';
+  if(!list.length)return h+'<div class="empty" style="padding:22px">Keine Ersatzteile zugeordnet.</div></section>';
+  for(const p of list){
+    h+='<div class="row two"><div><button type="button" class="btn link" data-act="openPart" data-id="'+esc(p.id)+'" style="font-weight:600">'+esc(p.name)+'</button><div class="s">'+esc([p.artikelnr,partPlace(p)].filter(Boolean).join(' · '))+' · '+esc(stockText(p))+'</div></div>'
+      +'<div class="acts">'+stockPill(p)+(S.canWrite?'<button type="button" class="btn sm" data-act="takePart" data-id="'+esc(p.id)+'" data-dev="'+esc(d.id)+'">Entnehmen</button>':'')+'</div></div>';
+  }
+  return h+'</section>';
+}
+
+/* Lagerplatz: Artikelliste zum Entnehmen (Ziel des Platz-QR-Codes) */
+function vPlatz(){
+  const pl=S.places.find(x=>x.id===S.detail);
+  if(!pl)return '<div class="card">'+emptyState('Lagerplatz nicht gefunden','Der Platz wurde gelöscht oder der Code ist veraltet.','<button class="btn" type="button" data-act="nav" data-v="lager">Zu den Lagerplätzen</button>')+'</div>';
+  const items=S.parts.filter(p=>p.standort===pl.id).sort((a,b)=>(isLow(b)-isLow(a))||cmp(a.regal||'',b.regal||'')||cmp(a.name,b.name));
+  const devs=S.devices.filter(d=>d.standort===pl.id).sort((a,b)=>cmp(a.inv,b.inv));
+  let h='<button type="button" class="btn link back" data-act="nav" data-v="lager">'+ic('back','sm')+' Zurück zu den Lagerplätzen</button>';
+  h+='<div class="page-head"><div><h1>'+esc(pl.name)+exTag(pl)+'</h1><div class="muted">'+esc(pl.beschreibung||'')+'</div></div><span class="sp"></span>'
+    +(S.canWrite?'<button class="btn" type="button" data-act="newPart" data-place="'+esc(pl.id)+'">'+ic('plus','sm')+' Artikel hier anlegen</button>':'')+'</div>';
+  h+='<div class="grid2"><section class="card"><div class="hd"><h2>Material an diesem Platz</h2></div>';
+  if(!items.length)h+='<div class="empty" style="padding:22px">Hier ist noch kein Material eingetragen.</div>';
+  for(const p of items){
+    h+='<div class="row two"><div><button type="button" class="btn link" data-act="openPart" data-id="'+esc(p.id)+'" style="font-weight:600">'+esc(p.name)+'</button><div class="s">'+esc([p.regal,katOf(p)].filter(Boolean).join(' · '))+' · '+esc(stockText(p))+'</div></div>'
+      +'<div class="acts">'+stockPill(p)+(S.canWrite?'<button type="button" class="btn sm primary" data-act="takePart" data-id="'+esc(p.id)+'">Entnehmen</button>':'')+'</div></div>';
+  }
+  h+='</section><div class="stack"><section class="card"><div class="hd"><h2>QR-Etikett für diesen Platz</h2></div><div class="bd qrbox">'+qrSvg(placeQr(pl),150)
+    +'<div class="stack" style="gap:10px"><div><div class="s muted">Am Regal anbringen. Scan öffnet diese Liste, dort das Material antippen und die Menge eintragen.</div></div><button class="btn" type="button" data-act="labelForPlace" data-id="'+esc(pl.id)+'">Etikett drucken</button></div></div></section>';
+  if(devs.length)h+='<section class="card"><div class="hd"><h2>Geräte an diesem Platz</h2></div>'+devs.map(d=>'<div class="row two"><div><button type="button" class="btn link" data-act="open" data-id="'+esc(d.id)+'" style="font-weight:600">'+esc(d.inv+' · '+d.name)+'</button></div><div class="acts">'+statusPill(d.status)+'</div></div>').join('')+'</section>';
+  return h+'</div></div>';
+}
+
+/* Bestellliste und Mail */
+function orderGroups(parts){
+  const g={};
+  parts.forEach(p=>{const k=p.lieferant||'Ohne Lieferant';(g[k]=g[k]||[]).push(p);});
+  return Object.keys(g).sort(cmp).map(k=>({lieferant:k,teile:g[k].sort((a,b)=>cmp(a.name,b.name))}));
+}
+const orderLine=p=>'- '+orderQty(p)+' '+unitOf(p)+' '+p.name+(p.artikelnr?' (Art.-Nr. '+p.artikelnr+')':'');
+function orderText(parts){
+  if(!parts.length)return 'Alle Artikel liegen über dem Mindestbestand oder sind bestellt.';
+  let t='Artikel unter Mindestbestand, Stand '+fmt(today())+'\n';
+  orderGroups(parts).forEach(g=>{
+    t+='\n'+g.lieferant+':\n';
+    g.teile.forEach(p=>{t+=orderLine(p)+' (Bestand '+nbr(p.bestand)+', Minimum '+nbr(p.minbestand)+')\n';});
+  });
+  return t;
+}
+function orderMailHref(parts,toSupplier){
+  const sup=parts.length&&parts.every(p=>p.lieferant===parts[0].lieferant)?parts[0].lieferant:'';
+  const to=toSupplier?supMail(sup):(S.settings.empfaenger||[]).join(',');
+  let subject,body;
+  if(toSupplier){
+    subject='Bestellung '+(S.settings.firma||'');
+    body='Guten Tag,\n\nwir bestellen:\n\n'+parts.map(orderLine).join('\n')+'\n\nBitte um Bestätigung und Liefertermin.\n\nViele Grüße\n'+(S.settings.firma||'');
+  }else{
+    subject=parts.length===1?'Mindestbestand unterschritten: '+parts[0].name:'Artikel unter Mindestbestand ('+parts.length+')';
+    body=orderText(parts);
+  }
+  return 'mailto:'+to+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body.slice(0,1400));
+}
+function orderListModal(){
+  const need=toOrder(),done=lowParts().filter(p=>p.bestellt);
+  let body='';
+  if(!need.length)body+='<p class="muted" style="margin-top:0">Aktuell muss nichts bestellt werden.</p>';
+  orderGroups(need).forEach(g=>{
+    const mail=supMail(g.lieferant);
+    body+='<section class="card" style="margin-bottom:12px"><div class="hd"><h2>'+esc(g.lieferant)+'</h2></div><div class="bd stack" style="gap:10px"><ul style="margin:0;padding-left:18px">'
+      +g.teile.map(p=>'<li>'+esc(orderQty(p)+' '+unitOf(p)+' '+p.name)+(p.artikelnr?' <span class="muted">(Art.-Nr. '+esc(p.artikelnr)+')</span>':'')+' <span class="muted">· Bestand '+nbr(p.bestand)+', Minimum '+nbr(p.minbestand)+'</span></li>').join('')+'</ul>'
+      +'<div class="chips"><a class="btn" target="_blank" rel="noopener" href="'+esc(orderMailHref(g.teile,true))+'">Mail an '+(mail?esc(mail):'Lieferant')+' öffnen</a>'
+      +'<button type="button" class="btn" data-act="copyGroup" data-sup="'+esc(g.lieferant)+'">Kopieren</button>'
+      +(S.canWrite?'<button type="button" class="btn primary" data-act="markOrdered" data-sup="'+esc(g.lieferant)+'">Als bestellt markieren</button>':'')+'</div>'
+      +(mail?'':'<p class="muted" style="font-size:13px;margin:0">Keine E-Mail-Adresse für diesen Lieferanten hinterlegt (Einstellungen).</p>')+'</div></section>';
+  });
+  if(done.length)body+='<section class="card"><div class="hd"><h2>Bereits bestellt</h2></div>'+done.map(p=>'<div class="row two"><div><div class="t">'+esc(p.name)+'</div><div class="s">'+esc(p.lieferant||'')+' · bestellt am '+fmt(p.bestellt.datum)+' ('+nbr(p.bestellt.menge)+' '+esc(unitOf(p))+')</div></div><div class="acts">'+(S.canWrite?'<button type="button" class="btn sm" data-act="addPart" data-id="'+esc(p.id)+'">Wareneingang</button>':'')+'</div></div>').join('')+'</section>';
+  openModal({title:'Bestell-Liste',wide:true,submit:null,cancelLabel:'Schließen',body:body,
+    extra:need.length?'<button type="button" class="btn" data-act="copyGroup" data-sup="">Alles kopieren</button>':''});
+}
+
+/* Formulare */
+function partForm(ex,pre){
+  const p=ex||{};pre=pre||{};
+  const sel=new Set(ex?(p.geraete||[]):(pre.dev?[pre.dev]:[]));
+  const devs=S.devices.slice().sort((a,b)=>cmp(a.inv,b.inv));
+  openModal({title:ex?'Artikel bearbeiten':'Neuer Artikel',wide:true,
+    body:'<div class="form-grid two">'
+      +'<div class="field"><label for="f_kategorie">Kategorie</label><select id="f_kategorie" name="kategorie">'+options(KATS.map(x=>[x,x]),p.kategorie||'Ersatzteil')+'</select></div>'
+      +inp('Bezeichnung *','name',p.name,'required placeholder="z. B. Rasendünger 25 kg"')
+      +inp('Artikelnummer (Original)','artikelnr',p.artikelnr,'placeholder="Herstellernummer"')
+      +inp('Hersteller','hersteller',p.hersteller,'placeholder="z. B. Honda"')
+      +'<div class="field"><label for="f_lieferant">Lieferant</label><input id="f_lieferant" name="lieferant" type="text" value="'+esc(p.lieferant||'')+'" list="lieflist" placeholder="z. B. Ahrens Lügde" autocomplete="off"><datalist id="lieflist">'+suppliers().concat((S.settings.lieferanten||[]).map(l=>l.name)).filter((x,i,a)=>a.indexOf(x)===i).map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist></div>'
+      +'<div class="field"><label for="f_standort">Lagerplatz</label><select id="f_standort" name="standort">'+options(placeOpts(),p.standort||pre.place||'','Ohne Lagerplatz')+'</select></div>'
+      +inp('Regal / Fach','regal',p.regal,'placeholder="z. B. Regal 3, unten"')
+      +inp('Einheit','einheit',p.einheit||'Stk','placeholder="Stk, Sack, Rolle, Dose, m …"')
+      +inp(ex?'Aktueller Bestand (Änderung nur per Buchung)':'Anfangsbestand','bestand',ex?p.bestand:0,(ex?'disabled ':'')+'min="0" step="any" inputmode="decimal"',null,'number')
+      +inp('Mindestbestand','minbestand',nbr(p.minbestand),'min="0" step="any" inputmode="decimal"',null,'number')
+      +inp('Bestellmenge (leer = bis Minimum auffüllen)','bestellmenge',nbr(p.bestellmenge)||'','min="0" step="any" inputmode="decimal"',null,'number')
+      +'<div class="field full"><label>Passend für Geräte (optional)</label><div class="pick" style="max-height:160px;overflow:auto">'
+      +(devs.length?devs.map(d=>'<label><input type="checkbox" name="dev" value="'+esc(d.id)+'"'+(sel.has(d.id)?' checked':'')+'><span><strong>'+esc(d.inv)+'</strong> · '+esc(d.name)+'</span></label>').join(''):'<span class="muted">Noch keine Geräte angelegt.</span>')
+      +'</div></div>'
+      +'<div class="field full"><label for="f_notiz">Notiz</label><textarea id="f_notiz" name="notiz" style="min-height:60px">'+esc(p.notiz||'')+'</textarea></div></div>',
+    extra:ex?'<button type="button" class="btn danger" data-act="delPart" data-id="'+esc(ex.id)+'">Löschen</button>':'',
+    onSubmit:async fd=>{
+      if(!needWrite())return false;
+      const data=Object.assign({},ex?toDoc(ex):{},{kategorie:gv(fd,'kategorie')||'Ersatzteil',name:gv(fd,'name'),artikelnr:gv(fd,'artikelnr'),hersteller:gv(fd,'hersteller'),lieferant:gv(fd,'lieferant'),standort:gv(fd,'standort'),regal:gv(fd,'regal'),
+        minbestand:Math.max(0,round2(gv(fd,'minbestand'))),bestellmenge:Math.max(0,round2(gv(fd,'bestellmenge'))),einheit:gv(fd,'einheit')||'Stk',geraete:fd.getAll('dev'),notiz:gv(fd,'notiz')});
+      if(ex){await db.doc('teile/'+ex.id).set(data);toast('Artikel gespeichert.');return;}
+      data.bestand=Math.max(0,round2(gv(fd,'bestand')));
+      let n=nextPartNumber(),done=null;
+      for(let t=0;t<6&&!done;t++){
+        const id='T-'+String(n).padStart(4,'0'),ref=db.doc('teile/'+id);
+        const snap=await ref.get();
+        if(!snap.exists){await ref.set(data);done=id;}else n++;
+      }
+      if(!done)throw new Error('Keine freie Artikelnummer gefunden.');
+      toast('Angelegt als '+done+'.');
+      setTimeout(()=>go('teil',done),0);
+    }});
+}
+async function bookPart(p,art,menge,devId,note){
+  const ref=db.doc('teile/'+p.id),snap=await ref.get();
+  if(!snap.exists)throw new Error('Der Artikel wurde inzwischen gelöscht.');
+  const cur=snap.data(),have=nbr(cur.bestand);
+  let delta;
+  if(art==='entnahme'){
+    if(menge>have)throw new Error('Es sind nur '+have+' '+(cur.einheit||'Stk')+' gebucht. Stimmt der Bestand nicht, bitte eine Inventur buchen.');
+    delta=-menge;
+  }else if(art==='zugang')delta=menge;
+  else delta=round2(menge-have);
+  const neu=round2(have+delta),min=nbr(cur.minbestand);
+  const upd={bestand:neu};
+  if(delta>0&&neu>=min&&cur.bestellt)upd.bestellt=null;
+  await ref.update(upd);
+  await db.collection('buchungen').doc().set({teilId:p.id,art:art,menge:delta,neu:neu,user:S.meId||'',geraetId:devId||'',notiz:note||'',datum:today(),zeit:Date.now()});
+  const was=min>0&&have<min,now=min>0&&neu<min;
+  if(now&&!was){
+    await db.collection('benachrichtigungen').doc().set({typ:'mindestbestand',teilId:p.id,name:cur.name,artikelnr:cur.artikelnr||'',lieferant:cur.lieferant||'',bestand:neu,minbestand:min,von:S.meId||'',datum:today(),zeit:Date.now(),gesendet:false});
+  }
+  return{neu:neu,unter:now&&!was};
+}
+function bookForm(p,art,devId){
+  const needName=!myName();
+  const titles={entnahme:'Entnehmen',zugang:'Zugang buchen',inventur:'Inventur'};
+  const devs=S.devices.slice().sort((a,b)=>cmp(a.inv,b.inv));
+  const linked=new Set(p.geraete||[]);
+  const devOpts=devs.filter(d=>linked.has(d.id)).concat(devs.filter(d=>!linked.has(d.id))).map(d=>[d.id,d.inv+' · '+d.name]);
+  openModal({title:titles[art]+': '+p.name,submit:art==='entnahme'?'Entnahme buchen':'Buchen',
+    body:'<p class="muted" style="margin-top:0">Aktueller Bestand: <strong>'+nbr(p.bestand)+' '+esc(unitOf(p))+'</strong>'+(p.regal||p.standort?' · '+esc(partPlace(p)):'')+'</p><div class="form-grid">'
+      +inp(art==='inventur'?'Gezählter Bestand *':'Menge in '+unitOf(p)+' *','menge',art==='inventur'?nbr(p.bestand):1,'required min="'+(art==='inventur'?0:0.01)+'" step="any" inputmode="decimal"',null,'number')
+      +(art==='entnahme'&&devOpts.length&&katOf(p)==='Ersatzteil'?'<div class="field"><label for="f_dev">Für Gerät (optional)</label><select id="f_dev" name="dev">'+options(devOpts,devId||'','Kein bestimmtes Gerät')+'</select></div>':'')
+      +inp('Notiz oder Baustelle (optional)','notiz','','placeholder="z. B. Garten Schmidt"')
+      +(needName?inp('Ihr Name *','name','','required autocomplete="name" placeholder="Wer bucht?"'):'')
+      +'</div>'+(needName?'<p class="muted" style="font-size:13px;margin-bottom:0">Der Name wird auf diesem Gerät gemerkt und steht bei jeder Buchung. Mit eigenen Zugangsdaten auf dem Server ersetzt sich das später.</p>':''),
+    onSubmit:async fd=>{
+      if(!needWrite())return false;
+      if(needName){const nm=gv(fd,'name');if(!nm)return false;try{localStorage.setItem('galabau.name',nm);}catch(_){}S.meId=nm;}
+      const menge=round2(gv(fd,'menge'));
+      if(art!=='inventur'&&menge<=0){toast('Bitte eine Menge größer 0 eintragen.','err');return false;}
+      if(menge<0){toast('Der Bestand kann nicht negativ sein.','err');return false;}
+      const r=await bookPart(p,art,menge,gv(fd,'dev'),gv(fd,'notiz'));
+      toast(r.unter?'Gebucht. Mindestbestand unterschritten, Hinweis für das Büro vorgemerkt.':'Gebucht. Neuer Bestand: '+r.neu+' '+unitOf(p)+'.',r.unter?'err':undefined);
+    }});
+}
+
+/* ================= Anforderungen und Packliste ================= */
+const ASTAT={offen:'Offen',gepackt:'Gepackt',ausgeliefert:'Ausgeliefert'};
+const anfPill=s=>pill(s==='offen'?'rs-offen':s==='gepackt'?'rs-bearbeitung':'rs-erledigt',ASTAT[s]||s);
+const anfById=id=>S.anf.find(r=>r.id===id);
+const tomorrow=()=>addDays(today(),1);
+function dayName(d){
+  const df=diffDays(today(),d);
+  if(df===0)return 'Heute';if(df===1)return 'Morgen';if(df===-1)return 'Gestern';
+  return WD[(new Date(utc(d)).getUTCDay()+6)%7]+', '+fmt(d);
+}
+const posText=po=>po.teilId?(round2(po.menge)+' '+(po.einheit||'Stk')+' '+po.name):po.name;
+const posPlace=po=>{const p=po.teilId&&partById(po.teilId);return p?partPlace(p):'Nicht im Lager';};
+const baustellen=()=>Array.from(new Set((S.settings.baustellen||[]).concat(S.anf.map(r=>r.baustelle)).filter(Boolean))).sort(cmp);
+const openAnf=()=>S.anf.filter(r=>r.status!=='ausgeliefert');
+function anfRow(r){
+  return '<button type="button" class="row rep" data-act="openAnf" data-id="'+esc(r.id)+'"><div><div class="t">'+esc(r.baustelle)+exTag(r)+'</div><div class="s">'+esc(dayName(r.datum))+' · '+(r.positionen||[]).length+' Positionen · von '+esc(r.beispiel?'Beispiel':nameOf(r.von))+'</div></div><div>'+anfPill(r.status)+'</div></button>';
+}
+function vAnf(){
+  let h='<div class="page-head"><h1>Anforderungen</h1><span class="sp"></span>'+(S.canWrite?'<button class="btn primary" type="button" data-act="newAnf">'+ic('plus','sm')+' Material anfordern</button>':'')+'</div>';
+  h+='<div class="chips" style="margin-bottom:14px"><button class="btn'+(S.anfTab==='liste'?' primary':'')+'" type="button" data-act="anfTab" data-t="liste">Alle Anforderungen</button><button class="btn'+(S.anfTab==='pack'?' primary':'')+'" type="button" data-act="anfTab" data-t="pack">Packliste</button></div>';
+  return h+(S.anfTab==='pack'?packHtml():anfListHtml());
+}
+function anfListHtml(){
+  if(!S.anf.length)return '<div class="card">'+emptyState('Noch keine Anforderungen','Auf der Baustelle Material für einen der nächsten Tage anfordern. Der Packer bekommt daraus eine Packliste nach Lagerplatz.',S.canWrite?'<button class="btn primary" type="button" data-act="newAnf">Material anfordern</button> <button class="btn" type="button" data-act="loadExamples">Beispieldaten laden</button>':'')+'</div>';
+  const open=openAnf().sort((a,b)=>cmp(a.datum,b.datum)||cmp(a.baustelle,b.baustelle));
+  const done=S.anf.filter(r=>r.status==='ausgeliefert').sort((a,b)=>cmp(b.datum,a.datum)).slice(0,8);
+  let h='<section class="card"><div class="hd"><h2>Offen und gepackt</h2></div>'+(open.length?open.map(anfRow).join(''):'<div class="empty" style="padding:22px">Nichts offen.</div>')+'</section>';
+  if(done.length)h+='<section class="card" style="margin-top:16px"><div class="hd"><h2>Zuletzt ausgeliefert</h2></div>'+done.map(anfRow).join('')+'</section>';
+  return h;
+}
+function packData(day){
+  const reqs=S.anf.filter(r=>r.datum===day&&r.status!=='ausgeliefert').sort((a,b)=>cmp(a.baustelle,b.baustelle));
+  const agg={},frei=[];
+  reqs.forEach(r=>(r.positionen||[]).forEach(po=>{
+    if(!po.teilId){frei.push({baustelle:r.baustelle,name:po.name});return;}
+    const a=agg[po.teilId]||(agg[po.teilId]={teilId:po.teilId,name:po.name,einheit:po.einheit||'Stk',total:0,offen:0});
+    a.total=round2(a.total+nbr(po.menge));
+    if(r.status==='offen')a.offen=round2(a.offen+nbr(po.menge));
+  }));
+  const lines=Object.keys(agg).map(k=>agg[k]).sort((a,b)=>cmp(posPlace(a),posPlace(b))||cmp(a.name,b.name));
+  return{reqs:reqs,lines:lines,frei:frei};
+}
+function packHtml(){
+  const day=S.packDay,pd=packData(day);
+  let h='<div class="chips" style="align-items:flex-end;margin-bottom:14px"><div class="field" style="min-width:170px"><label for="packDay">Tag</label><input id="packDay" type="date" value="'+esc(day)+'" data-bind="packDay"></div>'
+    +'<button class="btn" type="button" data-act="packDayTo" data-d="0">Heute</button><button class="btn" type="button" data-act="packDayTo" data-d="1">Morgen</button>'
+    +'<span class="sp"></span><button class="btn" type="button" data-act="copyPack">Packliste kopieren</button><button class="btn" type="button" data-act="printPack">Drucken</button></div>';
+  h+='<p class="muted" style="margin:0 0 12px">'+esc(dayName(day))+' · '+pd.reqs.length+(pd.reqs.length===1?' Baustelle':' Baustellen')+'</p>';
+  if(!pd.reqs.length)return h+'<div class="card">'+emptyState('Keine Anforderungen für diesen Tag','Für diesen Tag ist nichts angefordert oder alles schon ausgeliefert.','')+'</div>';
+  h+='<section class="card"><div class="hd"><h2>Sammelliste nach Lagerplatz</h2></div>';
+  let lastPlace=null;
+  for(const a of pd.lines){
+    const p=partById(a.teilId),pl=posPlace(a);
+    if(pl!==lastPlace){h+='<div class="s muted" style="padding:10px 16px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:12px">'+esc(pl)+'</div>';lastPlace=pl;}
+    const short=p&&a.offen>nbr(p.bestand);
+    h+='<div class="row two"><div><div class="t">'+esc(round2(a.total)+' '+a.einheit+' '+a.name)+'</div><div class="s">'+(p?'Bestand '+esc(stockText(p)):'Artikel nicht mehr vorhanden')+'</div></div><div class="acts">'+(short?pill('fr-over','Bestand reicht nicht'):'')+'</div></div>';
+  }
+  if(pd.frei.length)h+='<div class="s muted" style="padding:10px 16px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:12px">Nicht im Lager (Sonderwunsch)</div>'+pd.frei.map(f=>'<div class="row two"><div><div class="t">'+esc(f.name)+'</div><div class="s">'+esc(f.baustelle)+'</div></div><div></div></div>').join('');
+  h+='</section>';
+  for(const r of pd.reqs){
+    const poss=(r.positionen||[]).map((po,i)=>({po:po,i:i})).sort((a,b)=>cmp(posPlace(a.po),posPlace(b.po))||cmp(a.po.name,b.po.name));
+    h+='<section class="card" style="margin-top:16px"><div class="hd"><h2>'+esc(r.baustelle)+exTag(r)+'</h2><span class="sp"></span>'+anfPill(r.status)+'</div><div class="bd stack" style="gap:8px">'
+      +'<div class="muted" style="font-size:13px">angefordert von '+esc(r.beispiel?'Beispiel':nameOf(r.von))+(r.notiz?' · '+esc(r.notiz):'')+'</div>'
+      +poss.map(x=>'<label class="check" style="align-items:flex-start"><input type="checkbox" data-change="togglePack" data-rid="'+esc(r.id)+'" data-i="'+x.i+'"'+(x.po.gepackt?' checked':'')+(S.canWrite&&r.status!=='ausgeliefert'?'':' disabled')+'><span>'+esc(posText(x.po))+' <span class="muted">· '+esc(posPlace(x.po))+'</span>'+(nbr(x.po.fehlt)>0?' '+pill('fr-over','fehlt '+nbr(x.po.fehlt)):'')+'</span></label>').join('')
+      +(S.canWrite?'<div class="chips" style="margin-top:6px">'+(r.status==='offen'?'<button class="btn primary" type="button" data-act="packDone" data-id="'+esc(r.id)+'">Gepackt, Bestand abbuchen</button>':'')+(r.status==='gepackt'?'<button class="btn primary" type="button" data-act="deliver" data-id="'+esc(r.id)+'">Ausgeliefert</button>':'')+'<button class="btn" type="button" data-act="openAnf" data-id="'+esc(r.id)+'">Details</button></div>':'')+'</div></section>';
+  }
+  return h;
+}
+function packText(day){
+  const pd=packData(day);
+  let t='Packliste für '+dayName(day)+' ('+fmt(day)+')\n';
+  if(!pd.reqs.length)return t+'\nNichts angefordert.\n';
+  pd.reqs.forEach(r=>{
+    t+='\n'+r.baustelle+(r.notiz?' – '+r.notiz:'')+':\n';
+    (r.positionen||[]).slice().sort((a,b)=>cmp(posPlace(a),posPlace(b))).forEach(po=>{t+='- '+posText(po)+(po.teilId?' ('+posPlace(po)+')':'')+'\n';});
+  });
+  return t;
+}
+function anfForm(ex){
+  const r=ex||{};
+  const qty={};(r.positionen||[]).forEach(po=>{if(po.teilId)qty[po.teilId]=po.menge;});
+  const frei=(r.positionen||[]).filter(po=>!po.teilId).map(po=>po.name).join('\n');
+  const needName=!myName()&&!ex;
+  const arts=S.parts.slice().sort((a,b)=>cmp(KATS.indexOf(katOf(a))+'|'+a.name,KATS.indexOf(katOf(b))+'|'+b.name));
+  let rows='',lastK=null;
+  for(const p of arts){
+    if(katOf(p)!==lastK){lastK=katOf(p);rows+='<div class="s muted" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:12px;padding-top:12px">'+esc(lastK)+'</div>';}
+    rows+='<div class="artrow" data-s="'+esc([p.name,p.artikelnr,p.lieferant,katOf(p)].join(' ').toLowerCase())+'" style="display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">'
+      +'<div><div style="font-weight:600;color:var(--fg-strong)">'+esc(p.name)+'</div><div class="muted" style="font-size:13px">'+esc(partPlace(p))+' · Bestand '+esc(stockText(p))+'</div></div>'
+      +'<input type="number" name="q_'+esc(p.id)+'" min="0" step="any" inputmode="decimal" placeholder="0" aria-label="Menge '+esc(p.name)+' in '+esc(unitOf(p))+'" value="'+(qty[p.id]!=null?esc(qty[p.id]):'')+'"></div>';
+  }
+  openModal({title:ex?'Anforderung bearbeiten':'Material anfordern',wide:true,
+    body:'<div class="form-grid two">'
+      +'<div class="field"><label for="f_baustelle">Baustelle *</label><input id="f_baustelle" name="baustelle" type="text" required value="'+esc(r.baustelle||'')+'" list="bslist" placeholder="z. B. Garten Schmidt" autocomplete="off"><datalist id="bslist">'+baustellen().map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist></div>'
+      +inp('Benötigt am *','datum',r.datum||tomorrow(),'required min="'+today()+'"',null,'date')
+      +inp('Hinweis (optional)','notiz',r.notiz,'placeholder="z. B. bitte bis 7 Uhr bereitstellen"','full')
+      +'</div><h3 style="margin:18px 0 6px;font-size:15px">Material aus dem Lager</h3>'
+      +'<div class="field"><label class="sr" for="artFilter">Material suchen</label><input id="artFilter" type="search" placeholder="Material suchen …" autocomplete="off"></div>'
+      +'<div style="max-height:320px;overflow:auto;padding-right:4px">'+(rows||'<p class="muted">Noch kein Material im Lager angelegt.</p>')+'</div>'
+      +'<div class="field" style="margin-top:14px"><label for="f_frei">Sonstiges, nicht im Lager (eine Zeile pro Position)</label><textarea id="f_frei" name="frei" style="min-height:70px" placeholder="z. B. 6 Stützwinkel Beton">'+esc(frei)+'</textarea></div>'
+      +(needName?'<div class="form-grid" style="margin-top:10px">'+inp('Ihr Name *','name','','required autocomplete="name"')+'</div>':''),
+    extra:ex?'<button type="button" class="btn danger" data-act="delAnf" data-id="'+esc(ex.id)+'">Löschen</button>':'',
+    onInput:(form,e)=>{
+      if(e.target&&e.target.id==='artFilter'){const q=e.target.value.trim().toLowerCase();form.querySelectorAll('.artrow').forEach(x=>{x.hidden=!!q&&x.dataset.s.indexOf(q)<0;});}
+    },
+    onSubmit:async fd=>{
+      if(!needWrite())return false;
+      if(needName){const nm=gv(fd,'name');if(!nm)return false;try{localStorage.setItem('galabau.name',nm);}catch(_){}S.meId=nm;}
+      const pos=[];
+      for(const pair of fd.entries()){
+        const k=pair[0];if(k.indexOf('q_')!==0)continue;
+        const m=round2(pair[1]);if(m<=0)continue;
+        const p=partById(k.slice(2));if(!p)continue;
+        const old=(r.positionen||[]).find(x=>x.teilId===p.id);
+        pos.push({teilId:p.id,name:p.name,menge:m,einheit:unitOf(p),gepackt:old?!!old.gepackt:false});
+      }
+      gv(fd,'frei').split('\n').map(x=>x.trim()).filter(Boolean).forEach(x=>pos.push({teilId:'',name:x,menge:null,einheit:'',gepackt:false}));
+      if(!pos.length){toast('Bitte mindestens eine Menge oder eine Zeile bei „Sonstiges“ eintragen.','err');return false;}
+      const datum=gv(fd,'datum');
+      if(!isDate(datum)){toast('Bitte ein Datum wählen.','err');return false;}
+      const data=Object.assign({},ex?toDoc(ex):{status:'offen',von:S.meId||'',zeit:Date.now()},{baustelle:gv(fd,'baustelle'),datum:datum,notiz:gv(fd,'notiz'),positionen:pos});
+      const ref=ex?db.doc('anforderungen/'+ex.id):db.collection('anforderungen').doc();
+      await ref.set(data);
+      S.packDay=datum;
+      toast(ex?'Anforderung gespeichert.':'Angefordert für '+dayName(datum)+'.');
+    }});
+}
+function anfView(r){
+  const w=S.canWrite;
+  openModal({title:r.baustelle,submit:null,cancelLabel:'Schließen',
+    body:'<dl class="dl"><dt>Benötigt am</dt><dd>'+esc(dayName(r.datum))+' ('+fmt(r.datum)+')</dd><dt>Status</dt><dd>'+anfPill(r.status)+'</dd><dt>Angefordert von</dt><dd>'+esc(r.beispiel?'Beispiel':nameOf(r.von))+'</dd>'
+      +(r.gepacktAm?'<dt>Gepackt</dt><dd>'+fmt(r.gepacktAm)+' · '+esc(nameOf(r.gepacktVon))+'</dd>':'')+'<dt>Hinweis</dt><dd>'+esc(r.notiz||'–')+'</dd></dl>'
+      +'<ul style="margin:12px 0 0;padding-left:18px">'+(r.positionen||[]).map(po=>'<li>'+esc(posText(po))+(po.teilId?' <span class="muted">· '+esc(posPlace(po))+'</span>':'')+(nbr(po.fehlt)>0?' '+pill('fr-over','fehlt '+nbr(po.fehlt)):'')+'</li>').join('')+'</ul>',
+    extra:(w&&r.status==='offen'?'<button type="button" class="btn" data-act="editAnf" data-id="'+esc(r.id)+'">Bearbeiten</button><button type="button" class="btn danger" data-act="delAnf" data-id="'+esc(r.id)+'">Löschen</button>':'')});
+}
+const patchAnf=(id,f)=>db.doc('anforderungen/'+id).update(f);
+Object.assign(CHG,{
+  togglePack:async el=>{
+    if(!needWrite()){render();return;}
+    const r=anfById(el.dataset.rid);if(!r)return;
+    const pos=clone(r.positionen||[]),i=Number(el.dataset.i);
+    if(!pos[i])return;
+    pos[i].gepackt=!!el.checked;
+    await run(()=>patchAnf(r.id,{positionen:pos}));
+  }
+});
+Object.assign(ACT,{
+  openPart:ds=>{closeModal();go('teil',ds.id);},
+  openPlace:ds=>{closeModal();go('platz',ds.id);},
+  resetPartFilter:()=>{S.tq='';S.tLief='';S.tKat='';S.tLow=false;render();},
+  newPart:ds=>{if(needWrite())partForm(null,{dev:ds&&ds.dev,place:ds&&ds.place});},
+  editPart:ds=>{if(needWrite()){const p=partById(ds.id);if(p)partForm(p);}},
+  delPart:async(ds,t)=>{
+    if(!needWrite()||!arm(t))return;
+    const p=partById(ds.id);if(!p)return;
+    const ok=await run(async()=>{
+      for(const m of S.moves.filter(x=>x.teilId===p.id))await db.doc('buchungen/'+m.id).delete();
+      await db.doc('teile/'+p.id).delete();
+    },'Artikel gelöscht.');
+    if(ok){closeModal();go('teile');}
+  },
+  takePart:ds=>{if(needWrite()){const p=partById(ds.id);if(p)bookForm(p,'entnahme',ds.dev);}},
+  addPart:ds=>{if(needWrite()){const p=partById(ds.id);if(p)bookForm(p,'zugang');}},
+  countPart:ds=>{if(needWrite()){const p=partById(ds.id);if(p)bookForm(p,'inventur');}},
+  orderList:()=>orderListModal(),
+  copyGroup:async ds=>{
+    const parts=toOrder().filter(p=>!ds.sup||(p.lieferant||'Ohne Lieferant')===ds.sup);
+    const text=ds.sup?parts.map(orderLine).join('\n'):orderText(parts);
+    try{await navigator.clipboard.writeText(text);toast('Liste kopiert.');}
+    catch(_){toast('Kopieren nicht möglich. Bitte den Text von Hand markieren.','err');}
+  },
+  markOrdered:async ds=>{
+    if(!needWrite())return;
+    const parts=ds.id?[partById(ds.id)].filter(Boolean):toOrder().filter(p=>(p.lieferant||'Ohne Lieferant')===ds.sup);
+    if(!parts.length)return;
+    const ok=await run(async()=>{for(const p of parts)await db.doc('teile/'+p.id).update({bestellt:{datum:today(),menge:orderQty(p),von:S.meId||''}});},parts.length+(parts.length===1?' Artikel':' Artikel')+' als bestellt markiert.');
+    if(ok&&$('#modal').innerHTML)orderListModal();
+  },
+  exportTeile:async()=>{
+    const rows=[['Nr','Kategorie','Bezeichnung','Artikelnummer','Hersteller','Lieferant','Lagerplatz','Regal','Bestand','Mindestbestand','Einheit','Status','Bestellt am','Passend für']];
+    S.parts.slice().sort((a,b)=>cmp(a.id,b.id)).forEach(p=>rows.push([p.id,katOf(p),p.name,p.artikelnr,p.hersteller,p.lieferant,p.standort?placeName(p.standort):'',p.regal,nbr(p.bestand),nbr(p.minbestand),unitOf(p),isLow(p)?(p.bestellt?'unter Minimum, bestellt':'unter Minimum'):'ok',p.bestellt?fmt(p.bestellt.datum):'',partDevs(p).map(d=>d.inv).join(' ')]));
+    await saveFile('Material.csv',csv(rows));
+  },
+  labelForPart:ds=>{S.labelSrc='teile';S.labelSel=new Set([ds.id]);S.lq='';go('etiketten');},
+  labelForPlace:ds=>{S.labelSrc='plaetze';S.labelSel=new Set([ds.id]);S.lq='';go('etiketten');},
+  anfTab:ds=>{S.anfTab=ds.t;render();},
+  packDayTo:ds=>{S.packDay=addDays(today(),Number(ds.d));render();},
+  packGo:()=>{const o=openAnf().filter(r=>r.datum>=today()).sort((a,b)=>cmp(a.datum,b.datum))[0];S.packDay=o?o.datum:tomorrow();S.anfTab='pack';go('anf');},
+  newAnf:()=>{if(needWrite())anfForm(null);},
+  editAnf:ds=>{if(needWrite()){const r=anfById(ds.id);if(r&&r.status==='offen')anfForm(r);}},
+  openAnf:ds=>{const r=anfById(ds.id);if(r)anfView(r);},
+  delAnf:async(ds,t)=>{
+    if(!needWrite()||!arm(t))return;
+    const r=anfById(ds.id);if(!r)return;
+    if(r.status!=='offen'){toast('Gepackte Anforderungen lassen sich nicht löschen, der Bestand ist schon abgebucht.','err');return;}
+    const ok=await run(()=>db.doc('anforderungen/'+r.id).delete(),'Anforderung gelöscht.');
+    if(ok)closeModal();
+  },
+  packDone:async(ds,t)=>{
+    if(!needWrite())return;
+    if(!myName()){toast('Bitte zuerst unter Mehr → Einstellungen Ihren Namen eintragen.','err');return;}
+    if(!arm(t,'Wirklich abbuchen?'))return;
+    const r=anfById(ds.id);if(!r||r.status!=='offen')return;
+    const pos=clone(r.positionen||[]);let miss=0;
+    const ok=await run(async()=>{
+      for(const po of pos){
+        po.gepackt=true;po.fehlt=0;
+        if(!po.teilId)continue;
+        const p=partById(po.teilId);if(!p){po.fehlt=nbr(po.menge);miss++;continue;}
+        const fresh=(await db.doc('teile/'+p.id).get()).data(),avail=nbr(fresh.bestand),take=Math.min(nbr(po.menge),avail);
+        if(take>0)await bookPart(p,'entnahme',take,'','Anforderung '+r.baustelle+' ('+fmt(r.datum)+')');
+        po.fehlt=round2(nbr(po.menge)-take);
+        if(po.fehlt>0)miss++;
+      }
+      await patchAnf(r.id,{status:'gepackt',positionen:pos,gepacktAm:today(),gepacktVon:S.meId});
+    });
+    if(ok)toast(miss?'Gepackt und abgebucht. Bei '+miss+(miss===1?' Position':' Positionen')+' reichte der Bestand nicht.':'Gepackt, Bestand abgebucht.',miss?'err':undefined);
+  },
+  deliver:async ds=>{
+    if(!needWrite())return;
+    await run(()=>patchAnf(ds.id,{status:'ausgeliefert',ausgeliefertAm:today()}),'Als ausgeliefert markiert.');
+  },
+  copyPack:async()=>{
+    try{await navigator.clipboard.writeText(packText(S.packDay));toast('Packliste kopiert.');}
+    catch(_){toast('Kopieren nicht möglich.','err');}
+  },
+  printPack:()=>{try{window.print();}catch(_){toast('Drucken ist hier nicht möglich.','err');}}
+});
+
 /* ================= Ereignisse ================= */
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-act]');
@@ -977,6 +1512,7 @@ function bindValue(e){
     if(S[t.dataset.bind]===t.value)return;
     S[t.dataset.bind]=t.value;
     if(t.dataset.bind==='q'&&S.view==='inventar'&&$('#invList')){$('#invList').innerHTML=invListHtml();return;}
+    if(t.dataset.bind==='tq'&&S.view==='teile'&&$('#partList')){$('#partList').innerHTML=partListHtml();return;}
     if(t.dataset.bind==='lq'&&S.view==='etiketten'&&$('#pickList')){$('#pickList').innerHTML=pickHtml();return;}
     render();
   }
@@ -1021,9 +1557,9 @@ async function handleScan(file){
   }catch(err){console.error(err);S.scanMsg={err:true,text:err.message||'Das Foto konnte nicht gelesen werden.'};render();}
 }
 function openByInv(text){
-  const inv=invFromScan(text),dev=inv&&devById(inv);
-  if(dev){S.scanMsg=null;go('detail',dev.id);}
-  else{S.scanMsg={err:true,text:'Kein Gerät mit dieser Nummer gefunden.'};render();}
+  const t=resolveTarget(text);
+  if(t){S.scanMsg=null;go(t.view,t.id);}
+  else{S.scanMsg={err:true,text:'Dazu wurde kein Gerät, Artikel oder Lagerplatz gefunden.'};render();}
 }
 async function saveSettings(){
   if(!needWrite())return;
@@ -1034,7 +1570,13 @@ async function saveSettings(){
   const arten=val('s_arten').split('\n').map(l=>l.split('|')).map(p=>({name:(p[0]||'').trim(),monate:Math.max(0,parseInt(p[1],10)||0)})).filter(a=>a.name);
   try{localStorage.setItem('galabau.name',val('s_name').trim());}catch(_){}
   S.meId=myName()||'Mitarbeiter';
-  const next={firma:val('s_firma').trim()||DEFAULT_SETTINGS.firma,vorlauf:Math.min(365,Math.max(1,parseInt(val('s_vorlauf'),10)||30)),baseUrl:val('s_base').trim(),empfaenger:empf,fristenarten:arten};
+  try{localStorage.setItem('galabau.name',val('s_name').trim());}catch(_){}
+  S.meId=myName()||'Mitarbeiter';
+  const bau=val('s_bau').split('\n').map(x=>x.trim()).filter(Boolean);
+  const lief=val('s_lief').split('\n').map(l=>l.split('|')).map(p=>({name:(p[0]||'').trim(),email:(p[1]||'').trim()})).filter(x=>x.name);
+  const badm=lief.find(x=>x.email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.email));
+  if(badm){toast('Die Adresse bei „'+badm.name+'“ ist keine gültige E-Mail-Adresse.','err');return;}
+  const next={baustellen:bau,lieferanten:lief,firma:val('s_firma').trim()||DEFAULT_SETTINGS.firma,vorlauf:Math.min(365,Math.max(1,parseInt(val('s_vorlauf'),10)||30)),baseUrl:val('s_base').trim(),empfaenger:empf,fristenarten:arten};
   await run(()=>db.doc('einstellungen/main').set(next),'Einstellungen gespeichert.');
 }
 
@@ -1042,11 +1584,10 @@ async function saveSettings(){
 function applyHash(){
   const h=String(location.hash||'').replace(/^#/,'');
   if(!h)return;
-  if(VIEWS[h]&&h!=='detail'){go(h);return;}
-  const inv=invFromScan(h);
-  if(!inv)return;
-  if(S.mode!=='ready'){pendingHash=inv;return;}
-  if(devById(inv))go('detail',inv);else{toast('Gerät '+inv+' wurde nicht gefunden.','err');}
+  if(VIEWS[h]&&['detail','teil','platz'].indexOf(h)<0){go(h);return;}
+  if(S.mode!=='ready'){pendingHash=h;return;}
+  const t=resolveTarget(h);
+  if(t)go(t.view,t.id);else if(/^platz-|^[A-Za-z]+-\d+$/i.test(h))toast('„'+h+'“ wurde nicht gefunden.','err');
 }
 window.addEventListener('hashchange',applyHash);
 
@@ -1063,9 +1604,9 @@ async function resolveNames(){
 }
 function loaded(k){
   firstLoad[k]=true;
-  if(S.mode!=='ready'&&firstLoad.g&&firstLoad.l&&firstLoad.m&&firstLoad.s){
+  if(S.mode!=='ready'&&firstLoad.g&&firstLoad.l&&firstLoad.m&&firstLoad.s&&firstLoad.t&&firstLoad.b&&firstLoad.a){
     S.mode='ready';
-    if(pendingHash){const inv=pendingHash;pendingHash=null;if(devById(inv)){S.view='detail';S.detail=inv;}else toast('Gerät '+inv+' wurde nicht gefunden.','err');}
+    if(pendingHash){const h=pendingHash;pendingHash=null;const t=resolveTarget(h);if(t){S.view=t.view;S.detail=t.id;}else toast('„'+h+'“ wurde nicht gefunden.','err');}
     else applyHash();
   }
   render();resolveNames();
@@ -1074,6 +1615,10 @@ function subscribe(){
   const bad=k=>e=>{console.error(e);toast(errText(e),'err');loaded(k);};
   db.collection('geraete').onSnapshot(s=>{S.devices=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('g');},bad('g'));
   db.collection('lager').onSnapshot(s=>{S.places=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('l');},bad('l'));
+  db.collection('teile').onSnapshot(s=>{S.parts=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('t');},bad('t'));
+  db.collection('buchungen').onSnapshot(s=>{S.moves=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('b');},bad('b'));
+  db.collection('anforderungen').onSnapshot(s=>{S.anf=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('a');},bad('a'));
+  db.collection('benachrichtigungen').onSnapshot(s=>{S.outbox=s.docs.map(x=>Object.assign({id:x.id},x.data()));if(S.mode==='ready'&&S.view==='einstellungen')render();},()=>{});
   db.collection('meldungen').onSnapshot(s=>{S.reports=s.docs.map(x=>Object.assign({id:x.id},x.data()));loaded('m');},bad('m'));
   db.doc('einstellungen/main').onSnapshot(s=>{S.settings=Object.assign(clone(DEFAULT_SETTINGS),s.exists?s.data():{});if(!Array.isArray(S.settings.fristenarten)||!S.settings.fristenarten.length)S.settings.fristenarten=DEFAULT_ARTEN;if(!Array.isArray(S.settings.empfaenger))S.settings.empfaenger=[];loaded('s');},bad('s'));
 }

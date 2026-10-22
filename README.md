@@ -29,6 +29,22 @@ Alle Daten liegen **im Browser des jeweiligen Geräts** (IndexedDB). Es gibt kei
 - Scannen in der App: Foto eines QR-Codes aufnehmen/auswählen oder Inventarnummer eingeben.
 - Erst eine Testseite drucken und mit dem Handy scannen, bevor ein ganzer Satz Etiketten gedruckt wird.
 
+## Material, Lager und Anforderungen (Prototyp)
+
+**Material** (Ersatzteile, Verbrauchsmaterial, Kleinwerkzeug) mit Artikelnummer, Lieferant, Lagerplatz plus Regal, Bestand, Mindestbestand, Einheit und Bestellmenge.
+
+- **Entnahme per Lagerplatz-QR:** Jeder Lagerplatz hat einen QR-Code (QR-Etiketten → „Lagerplätze“). Scan öffnet die Artikelliste dieses Platzes, Artikel antippen, Menge eintragen. Artikel-Etiketten (z. B. Ersatzteile) gibt es zusätzlich. Mengen dürfen Dezimalstellen haben (z. B. 2,5 Sack).
+- **Buchungen** speichern Datum, Menge, Gerät oder Baustelle und Namen. Zugang und Inventur sind ebenfalls möglich.
+- **Unter Mindestbestand:** rote Markierung, Zähler im Menü, Hinweis auf der Startseite. Die **Bestell-Liste** gruppiert nach Lieferant und bietet Kopieren, einen fertigen Mail-Entwurf an den Lieferanten (E-Mail-Adressen unter Einstellungen) und „Als bestellt markieren“. Bestellte Artikel melden sich nicht erneut, bis „Zugang buchen“ den Bestand wieder über das Minimum bringt.
+- **Anforderungen von der Baustelle:** Baustelle, Tag und Material mit Mengen (oder Freitext für Sonderwünsche) anfordern.
+- **Packliste:** pro Tag eine Sammelliste nach Lagerplatz sortiert plus eine Karte je Baustelle zum Abhaken. „Gepackt, Bestand abbuchen“ bucht ab (reicht der Bestand nicht, wird die Fehlmenge markiert), danach „Ausgeliefert“. Kopieren und Drucken sind möglich.
+- **Annahmen:** Kleinwerkzeug wird verbraucht (keine Rückgabe-Buchung), Anforderungen gehen ohne Freigabe direkt an den Packer, Baustellen stehen als Liste in den Einstellungen und sind frei ergänzbar.
+- **Namen:** Ohne Server gibt es keine Benutzerkonten. Der Name wird einmal pro Gerät abgefragt (Einstellungen) und steht bei jeder Buchung und Anforderung. Das ist keine Absicherung. Mit dem späteren Server ersetzen ihn die Logins.
+- **Mail und Push sind noch nicht aktiv.** Beim Unterschreiten legt die App einen Eintrag in `benachrichtigungen` an (`typ: "mindestbestand"`, `gesendet: false`). Der spätere Server verschickt daraus E-Mail und Push und setzt `gesendet` auf `true`.
+- **Gemeinsame Daten:** Jedes Gerät hat sein eigenes Lager. Dass die Packliste auf dem Handy des Packers ankommt, geht erst mit dem Server.
+
+Datensammlungen: `geraete`, `lager`, `meldungen`, `fotos`, `einstellungen`, `teile`, `buchungen`, `benachrichtigungen`, `anforderungen`.
+
 ## Fristen und E-Mail
 
 Die App verschickt **keine E-Mails**. Überfällige und bald fällige Fristen erscheinen als rote bzw. gelbe Hinweise. Unter Einstellungen steht ein fertiger Fristenbericht zum Kopieren oder zum Öffnen im Mail-Programm. Die Prüfintervalle in den Vorlagen sind Vorschläge; maßgeblich sind Herstellerangaben, UVV und DGUV.

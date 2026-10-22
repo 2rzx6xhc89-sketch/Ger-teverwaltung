@@ -446,5 +446,412 @@ window.SEED_DOCS={
   "zeit": 1789900000000,
   "foto": false,
   "beispiel": true
+ },
+ "geraete/G-0006": {
+  "kategorie": "Gerät",
+  "name": "Rasenmäher Honda",
+  "typ": "Rasenmäher",
+  "hersteller": "Honda",
+  "modell": "HRX",
+  "seriennr": "",
+  "baujahr": "2022",
+  "kennzeichen": "",
+  "standort": "l-pflege",
+  "status": "wartung",
+  "notiz": "Messer alle 2 Jahre tauschen.",
+  "fristen": [
+   {
+    "id": "h1",
+    "art": "Wartung nach Herstellervorgabe",
+    "intervall": 12,
+    "letzte": "2025-11-30",
+    "faellig": "2026-11-30",
+    "notiz": ""
+   }
+  ],
+  "inv": "G-0002",
+  "beispiel": true,
+  "created": 1760000000000,
+  "verlauf": [
+   {
+    "d": "2026-01-14",
+    "t": "Angelegt (Beispiel)",
+    "u": null
+   }
+  ]
+ },
+ "lager/l-pflege": {
+  "name": "Pflegeschuppen",
+  "beschreibung": "Rasenpflege, Regale 1 bis 4",
+  "beispiel": true
+ },
+ "teile/T-0001": {
+  "name": "Ersatzmesser Rasenmäher",
+  "artikelnr": "BEISPIEL-1001",
+  "hersteller": "Honda",
+  "lieferant": "Ahrens Lügde",
+  "standort": "l-pflege",
+  "regal": "Regal 3",
+  "bestand": 1,
+  "minbestand": 1,
+  "einheit": "Stk",
+  "geraete": [
+   "G-0006"
+  ],
+  "notiz": "Artikelnummer ist ein Platzhalter, bitte die Originalnummer eintragen.",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "teile/T-0002": {
+  "name": "Zündkerze Motorsäge",
+  "artikelnr": "BEISPIEL-1002",
+  "hersteller": "Stihl",
+  "lieferant": "Ahrens Lügde",
+  "standort": "l-werkstatt",
+  "regal": "Schublade Z",
+  "bestand": 0,
+  "minbestand": 2,
+  "einheit": "Stk",
+  "geraete": [
+   "G-0001"
+  ],
+  "notiz": "",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "teile/T-0003": {
+  "name": "Sägekette Ersatz",
+  "artikelnr": "BEISPIEL-1003",
+  "hersteller": "Stihl",
+  "lieferant": "Ahrens Lügde",
+  "standort": "l-werkstatt",
+  "regal": "Regal 1",
+  "bestand": 3,
+  "minbestand": 2,
+  "einheit": "Stk",
+  "geraete": [
+   "G-0001"
+  ],
+  "notiz": "",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "teile/T-0004": {
+  "name": "Keilriemen Aufsitzmäher",
+  "artikelnr": "BEISPIEL-1004",
+  "hersteller": "Kubota",
+  "lieferant": "Landtechnik Beispiel GmbH",
+  "standort": "l-pflege",
+  "regal": "Regal 4",
+  "bestand": 2,
+  "minbestand": 1,
+  "einheit": "Stk",
+  "geraete": [
+   "M-0001"
+  ],
+  "notiz": "",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "teile/T-0005": {
+  "name": "Hydrauliköl 5 l",
+  "artikelnr": "BEISPIEL-1005",
+  "hersteller": "",
+  "lieferant": "Landtechnik Beispiel GmbH",
+  "standort": "l-aussen",
+  "regal": "Container links",
+  "bestand": 2,
+  "minbestand": 2,
+  "einheit": "Kanister",
+  "geraete": [
+   "M-0002",
+   "M-0003"
+  ],
+  "notiz": "",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "teile/T-0006": {
+  "name": "Luftfilter",
+  "artikelnr": "BEISPIEL-1006",
+  "hersteller": "Honda",
+  "lieferant": "Ahrens Lügde",
+  "standort": "l-pflege",
+  "regal": "Regal 3",
+  "bestand": 4,
+  "minbestand": 2,
+  "einheit": "Stk",
+  "geraete": [
+   "G-0006"
+  ],
+  "notiz": "",
+  "beispiel": true,
+  "kategorie": "Ersatzteil"
+ },
+ "buchungen/b-demo1": {
+  "teilId": "T-0002",
+  "art": "entnahme",
+  "menge": -1,
+  "neu": 0,
+  "user": "Max Mustermann",
+  "geraetId": "G-0001",
+  "notiz": "Kerze getauscht",
+  "datum": "2026-10-08",
+  "zeit": 1760000000001,
+  "beispiel": true
+ },
+ "buchungen/b-demo2": {
+  "teilId": "T-0002",
+  "art": "entnahme",
+  "menge": -1,
+  "neu": 1,
+  "user": "Erika Beispiel",
+  "geraetId": "G-0001",
+  "notiz": "",
+  "datum": "2026-09-30",
+  "zeit": 1760000000000,
+  "beispiel": true
+ },
+ "buchungen/b-demo3": {
+  "teilId": "T-0001",
+  "art": "zugang",
+  "menge": 2,
+  "neu": 2,
+  "user": "Max Mustermann",
+  "geraetId": "",
+  "notiz": "Lieferung Ahrens",
+  "datum": "2026-09-15",
+  "zeit": 1759999999999,
+  "beispiel": true
+ },
+ "buchungen/b-demo4": {
+  "teilId": "T-0001",
+  "art": "entnahme",
+  "menge": -1,
+  "neu": 1,
+  "user": "Erika Beispiel",
+  "geraetId": "G-0006",
+  "notiz": "Messer stumpf",
+  "datum": "2026-10-05",
+  "zeit": 1760000000002,
+  "beispiel": true
+ },
+ "lager/l-material": {
+  "name": "Materiallager Regal 5",
+  "beschreibung": "Dünger, Saatgut, Spray, Schnur",
+  "beispiel": true
+ },
+ "teile/T-0008": {
+  "kategorie": "Verbrauchsmaterial",
+  "name": "Rasendünger 25 kg",
+  "artikelnr": "BEISPIEL-2001",
+  "hersteller": "",
+  "lieferant": "Raiffeisen Beispiel",
+  "standort": "l-material",
+  "regal": "Regal 5 unten",
+  "bestand": 6,
+  "minbestand": 4,
+  "bestellmenge": 10,
+  "einheit": "Sack",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "teile/T-0009": {
+  "kategorie": "Verbrauchsmaterial",
+  "name": "Rasensaatgut Gebrauchsrasen 10 kg",
+  "artikelnr": "BEISPIEL-2002",
+  "hersteller": "",
+  "lieferant": "Raiffeisen Beispiel",
+  "standort": "l-material",
+  "regal": "Regal 5 mitte",
+  "bestand": 3,
+  "minbestand": 3,
+  "bestellmenge": 6,
+  "einheit": "Sack",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "teile/T-0010": {
+  "kategorie": "Verbrauchsmaterial",
+  "name": "KG-Rohr DN 110, 1 m",
+  "artikelnr": "BEISPIEL-2003",
+  "hersteller": "",
+  "lieferant": "Tiefbau-Handel Beispiel",
+  "standort": "l-aussen",
+  "regal": "Rohrlager",
+  "bestand": 12,
+  "minbestand": 10,
+  "bestellmenge": 20,
+  "einheit": "Stück",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "teile/T-0011": {
+  "kategorie": "Verbrauchsmaterial",
+  "name": "Maurerschnur 50 m",
+  "artikelnr": "BEISPIEL-2004",
+  "hersteller": "",
+  "lieferant": "Tiefbau-Handel Beispiel",
+  "standort": "l-material",
+  "regal": "Regal 5 oben",
+  "bestand": 0,
+  "minbestand": 2,
+  "bestellmenge": 6,
+  "einheit": "Rolle",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "teile/T-0012": {
+  "kategorie": "Verbrauchsmaterial",
+  "name": "Markierspray rot",
+  "artikelnr": "BEISPIEL-2005",
+  "hersteller": "",
+  "lieferant": "Tiefbau-Handel Beispiel",
+  "standort": "l-material",
+  "regal": "Regal 5 oben",
+  "bestand": 2,
+  "minbestand": 6,
+  "bestellmenge": 24,
+  "einheit": "Dose",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true,
+  "bestellt": {
+   "datum": "2026-10-20",
+   "menge": 24,
+   "von": "Manuel Beispiel"
+  }
+ },
+ "teile/T-0013": {
+  "kategorie": "Kleinwerkzeug",
+  "name": "Spaten",
+  "artikelnr": "BEISPIEL-3001",
+  "hersteller": "",
+  "lieferant": "Raiffeisen Beispiel",
+  "standort": "l-halle1",
+  "regal": "Wandhalter",
+  "bestand": 8,
+  "minbestand": 4,
+  "bestellmenge": 4,
+  "einheit": "Stück",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "teile/T-0014": {
+  "kategorie": "Kleinwerkzeug",
+  "name": "Arbeitshandschuhe Gr. 9",
+  "artikelnr": "BEISPIEL-3002",
+  "hersteller": "",
+  "lieferant": "Raiffeisen Beispiel",
+  "standort": "l-halle1",
+  "regal": "Regal A, Fach 2",
+  "bestand": 15,
+  "minbestand": 10,
+  "bestellmenge": 20,
+  "einheit": "Paar",
+  "geraete": [],
+  "notiz": "",
+  "beispiel": true
+ },
+ "anforderungen/a-demo1": {
+  "baustelle": "Garten Schmidt, Bad Pyrmont",
+  "datum": "2026-10-23",
+  "von": "Tom Beispiel",
+  "notiz": "Bitte bis 7 Uhr bereitstellen",
+  "status": "offen",
+  "zeit": 1760000000000,
+  "beispiel": true,
+  "positionen": [
+   {
+    "teilId": "T-0008",
+    "name": "Rasendünger 25 kg",
+    "menge": 2,
+    "einheit": "Sack",
+    "gepackt": false,
+    "fehlt": 0
+   },
+   {
+    "teilId": "T-0012",
+    "name": "Markierspray rot",
+    "menge": 3,
+    "einheit": "Dose",
+    "gepackt": false,
+    "fehlt": 0
+   },
+   {
+    "teilId": "T-0013",
+    "name": "Spaten",
+    "menge": 2,
+    "einheit": "Stück",
+    "gepackt": false,
+    "fehlt": 0
+   },
+   {
+    "teilId": "",
+    "name": "6 Stützwinkel Beton",
+    "menge": null,
+    "einheit": "",
+    "gepackt": false
+   }
+  ]
+ },
+ "anforderungen/a-demo2": {
+  "baustelle": "Spielplatz Kita Lügde",
+  "datum": "2026-10-23",
+  "von": "Erika Beispiel",
+  "notiz": "",
+  "status": "offen",
+  "zeit": 1760000001000,
+  "beispiel": true,
+  "positionen": [
+   {
+    "teilId": "T-0010",
+    "name": "KG-Rohr DN 110, 1 m",
+    "menge": 4,
+    "einheit": "Stück",
+    "gepackt": false,
+    "fehlt": 0
+   },
+   {
+    "teilId": "T-0011",
+    "name": "Maurerschnur 50 m",
+    "menge": 1,
+    "einheit": "Rolle",
+    "gepackt": false,
+    "fehlt": 0
+   },
+   {
+    "teilId": "T-0009",
+    "name": "Rasensaatgut Gebrauchsrasen 10 kg",
+    "menge": 1,
+    "einheit": "Sack",
+    "gepackt": false,
+    "fehlt": 0
+   }
+  ]
+ },
+ "anforderungen/a-demo3": {
+  "baustelle": "Garten Schmidt, Bad Pyrmont",
+  "datum": "2026-10-26",
+  "von": "Tom Beispiel",
+  "notiz": "",
+  "status": "offen",
+  "zeit": 1760000002000,
+  "beispiel": true,
+  "positionen": [
+   {
+    "teilId": "T-0014",
+    "name": "Arbeitshandschuhe Gr. 9",
+    "menge": 4,
+    "einheit": "Paar",
+    "gepackt": false,
+    "fehlt": 0
+   }
+  ]
  }
 };

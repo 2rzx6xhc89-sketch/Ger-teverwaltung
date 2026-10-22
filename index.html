@@ -1,5 +1,6 @@
 <!doctype html>
-<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#5f7f1a"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#5f7f1a"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}@media print{header.top,.tabbar,#toast,#modal,.btn,.chips,.nav,.band{display:none!important}body{background:#fff!important}.card{box-shadow:none!important;border:1px solid #bbb!important;break-inside:avoid}main{padding-block:0!important}}
+</style>
 <title>Böger Geräteverwaltung</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Ubuntu:wght@400;500;700&display=swap">
 <style>
@@ -75,12 +76,12 @@ button{cursor:pointer}
 .tabbar .badge{position:absolute;top:4px;left:calc(50% + 6px);margin:0;min-width:16px;height:16px;font-size:10px}
 
 main{padding-block:20px calc(88px + env(safe-area-inset-bottom,0px))}
-@media (min-width:1180px){
+@media (min-width:1100px){
   .nav{display:flex}.tabbar{display:none}
   main{padding-block:28px 56px}
 }
 @media (max-width:640px){.app-name{display:none}}
-@media (min-width:1180px) and (max-width:1279px){.app-name small{display:none}}
+@media (min-width:1100px) and (max-width:1279px){.app-name small{display:none}}
 
 /* Seitenkopf, Bänder */
 .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin-bottom:18px}
@@ -246,7 +247,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .toast.err{background:var(--bad);color:#fff}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .toast.err{color:#2a0d0a}}
 :root[data-theme="dark"] .toast.err{color:#2a0d0a}
-@media (min-width:1180px){.toast{bottom:28px}}
+@media (min-width:1100px){.toast{bottom:28px}}
 #toast:empty{display:none}
 .link-cards{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
 @media (min-width:700px){.link-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
